@@ -51,7 +51,7 @@ BREAKING_KEYWORDS = {
         'commodity', 'energy crisis', 'supply cut',
     ],
     '₿ Crypto': [
-        'bitcoin', 'btc', 'ethereum', 'crypto', 'sec', 'etf approval',
+        'bitcoin', 'btc', 'ethereum', 'crypto', 'sec enforcement', 'sec lawsuit', 'etf approval',
         'exchange hack', 'stablecoin', 'cbdc',
     ],
     '🌍 Macro': [
