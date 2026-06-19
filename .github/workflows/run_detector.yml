@@ -9,6 +9,16 @@ jobs:
   run-detector:
     runs-on: ubuntu-latest
     steps:
-      - name: Run script on PythonAnywhere
-        run: |
-          python bobb_news_detector.py
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Run detector
+        run: python bobb_news_detector.py
