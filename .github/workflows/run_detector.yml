@@ -1,0 +1,14 @@
+name: Bobb News Detector
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+jobs:
+  run-detector:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run script on PythonAnywhere
+        run: |
+          python bobb_news_detector.py
