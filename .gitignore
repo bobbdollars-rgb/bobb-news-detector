@@ -1,0 +1,16 @@
+# State file — berisi dedup history & cooldown, jangan di-push ke repo
+bobb_news_state.json
+
+# Python cache
+*.pyc
+*.pyo
+__pycache__/
+
+# Environment & secrets — jangan pernah commit ini
+.env
+*.env
+secrets.json
+
+# OS files
+.DS_Store
+Thumbs.db
