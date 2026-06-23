@@ -1,4 +1,4 @@
-import datetime, requests, json, os, re
+import datetime, requests, json, os, re, html
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -295,7 +295,9 @@ def send_text(text):
 def clean_val(val):
     if not val:
         return ''
-    val = re.sub(r'<[^>]+>', '', str(val)).strip()
+    val = str(val)
+    val = html.unescape(val)               # &lt;p&gt; -> <p>, &amp; -> &, dst
+    val = re.sub(r'<[^>]+>', '', val).strip()
     return val if val else ''
 
 def make_event(currency, title, impact_raw, dt_utc, forecast='', previous='', actual='', source=''):
@@ -609,7 +611,7 @@ def fmt_daily_briefing(events, now, source):
     if not events:
         return (
             f'📅 <b>ECONOMIC CALENDAR</b>\n'
-            f'<b>Bobb Market Intelligence v2.0</b>\n'
+            f'<b>Bobb Market Intelligence v2.1</b>\n'
             f'{DIV2}\n'
             f'📆 {date_str} (WIB)\n'
             f'{DIV}\n'
@@ -636,7 +638,7 @@ def fmt_daily_briefing(events, now, source):
 
     return (
         f'📅 <b>ECONOMIC CALENDAR</b>\n'
-        f'<b>Bobb Market Intelligence v2.0</b>\n'
+        f'<b>Bobb Market Intelligence v2.1</b>\n'
         f'{DIV2}\n'
         f'📆 {date_str} (WIB)\n'
         f'{DIV}\n'
@@ -669,7 +671,7 @@ def fmt_reminder(event, minutes_left):
         f'💱 Affected : <i>{pairs_str}</i>\n'
         f'{DIV}\n'
         f'⛔ <b>Avoid new entries until news passes!</b>\n'
-        f'<i>Bobb Market Intelligence v2.0</i>'
+        f'<i>Bobb Market Intelligence v2.1</i>'
     )
 
 
@@ -962,7 +964,7 @@ def fmt_actual_result(event, now=None):
         f'{direction_block}'
         f'{sentiment_block}'
         f'{DIV}\n'
-        f'<i>Bobb Market Intelligence v2.0</i>'
+        f'<i>Bobb Market Intelligence v2.1</i>'
     )
 
 
@@ -979,7 +981,7 @@ def fmt_all_sources_failed(now):
         f'   • MyFxBook\n'
         f'{DIV}\n'
         f'⚠️ Cek manual: forexfactory.com\n'
-        f'<i>Bobb Market Intelligence v2.0</i>'
+        f'<i>Bobb Market Intelligence v2.1</i>'
     )
 
 # ════════════════════════════════════════
@@ -1314,7 +1316,9 @@ def fmt_breaking_news(item, group, matched_kw, now):
     source = item.get('source', 'Unknown')
     link   = item.get('link',   '')
 
-    # Bersihkan HTML tags dari desc kalau ada
+    # Bersihkan HTML entities & tags dari desc (safety net — sumber NewsAPI
+    # tidak lewat clean_val(), dan beberapa RSS encode tag sebagai &lt;p&gt;)
+    desc = html.unescape(desc)
     desc = re.sub(r'<[^>]+>', '', desc).strip()
 
     time_wib  = (now + datetime.timedelta(hours=7)).strftime('%H:%M')
@@ -1344,7 +1348,7 @@ def fmt_breaking_news(item, group, matched_kw, now):
         f'{link_line}\n'
         f'{DIV2}\n'
         f'⚠️ <b>Monitor pergerakan harga dengan cermat!</b>\n'
-        f'<i>Bobb Market Intelligence v2.0</i>'
+        f'<i>Bobb Market Intelligence v2.1</i>'
     )
 
 def _assess_market_impact(keyword, group):
@@ -1538,7 +1542,7 @@ def fmt_spike_alert(pair, price_now, price_5m, pct_change):
         f'🕐 <b>{time_wib} WIB</b>  ({time_utc} UTC)  {date_str}\n'
         f'{DIV}\n'
         f'⚠️ <b>Cek chart & konfirmasi sebelum entry!</b>\n'
-        f'<i>Bobb Market Intelligence v2.0</i>'
+        f'<i>Bobb Market Intelligence v2.1</i>'
     )
 
 
@@ -1617,7 +1621,7 @@ def run_news_detector():
     now   = datetime.datetime.utcnow()
     state = load_state()
 
-    print(f'=== BOBB MARKET INTELLIGENCE v2.0 ===')
+    print(f'=== BOBB MARKET INTELLIGENCE v2.1 ===')
     print(f'Time UTC : {now.strftime("%Y-%m-%d %H:%M")}')
     print(f'Time WIB : {(now + datetime.timedelta(hours=7)).strftime("%Y-%m-%d %H:%M")}')
 
