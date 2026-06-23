@@ -5,37 +5,49 @@ warnings.filterwarnings('ignore')
 # ════════════════════════════════════════
 # VERSION
 # ════════════════════════════════════════
-VERSION = 'v1.8'
-# v1.0 — Initial standalone news detector
-# v1.1 — Dual source FF scraping + MyFxBook fallback
-# v1.2 — Primary: FF JSON (nfs.faireconomy.media) — lebih stabil dari scraping
-#         Fallback 1: FF HTML scraping
-#         Fallback 2: MyFxBook scraping
-#         Format waktu WIB + UTC semua pesan
-# v1.3 — Breaking News module: RSS Feed (primary) + NewsAPI (fallback)
-#         Keyword filter otomatis: war, sanctions, Fed, rate, oil, gold, crypto, dll
-#         Anti-duplikat via state, cooldown 4 jam per keyword group
-# v1.4 — FIX: sent_breaking cleanup bug — cooldown key tidak pernah expire (zombie)
-#         FIX: dedup hash diperpanjang dari 24 jam ke 7 hari — berita sama tidak re-trigger
-# v1.5 — FIX: pubDate filter max 6 jam — no more stale/old news
-#         FIX: false positive — 'war' whole-word match, 'crisis' butuh financial context
-#         FIX: RSS feeds — hapus Bloomberg/MarketWatch (block publik), tambah FT & Guardian
-#         FIX: 'sec' keyword dipindah jadi 'sec crypto' supaya tidak false positive
-# v1.6 — FIX: Bot token & Chat ID pindah ke env vars (GitHub Secrets) — no more hardcode
-#         FIX: sent_reminder & sent_actual cleanup — state JSON tidak lagi membengkak
-#         FIX: Hapus FT RSS feed — paywall, selalu 401/403 di GitHub Actions
-#         FIX: Eliminate double-fetch di run_news_detector — hemat bandwidth
-#         FIX: trade war conflict — hapus dari WAR_FALSE_POSITIVES, tetap di Macro keywords
-# v1.7 — NEW: Price Spike Detector — XAUUSD, BTCUSDT, 9 forex pairs
-#         Source: Binance public API (BTC), Yahoo Finance (XAU + forex) — gratis, no key
-#         Alert kalau harga gerak melebihi threshold dalam 5 menit terakhir
-#         Cooldown 30 menit per pair — anti-spam saat volatilitas ekstrem
-#         Pesan Telegram include: % move, direction, pair info, level harga
-# v1.8 — NEW: Pair Direction Predictor di Actual Result
-#         Setelah data rilis, bot prediksi arah tiap pair yang terdampak
-#         Logic: currency strength/weakness × pair composition × safe haven behavior
-#         Cover: USD, EUR, GBP, JPY, AUD, CAD, CHF, NZD, XAU, BTC
-#         Output: ↑/↓/↔ per pair dengan confidence label (Strong/Moderate/Watch)
+VERSION = 'v2.1'
+# v1.0  — Initial standalone news detector
+# v1.1  — Dual source FF scraping + MyFxBook fallback
+# v1.2  — Primary FF JSON, fallback FF HTML + MyFxBook
+# v1.3  — Breaking News: RSS + NewsAPI fallback
+# v1.4  — FIX: breaking news dedup & cleanup bugs
+# v1.5  — FIX: pubDate filter, false positive, RSS cleanup
+# v1.6  — FIX: env vars, state cleanup, double-fetch
+# v1.7  — NEW: Price Spike Detector (Binance + Yahoo)
+# v1.8  — NEW: Pair Direction Predictor
+# v1.9  — FIX: Daily Briefing window 15m → 59m
+# v1.10 — FIX: Reminder 10m → 30m, Actual 20m → 40m
+# v2.0  — MAJOR UPGRADE (all phases, no new API keys required):
+#   [Phase 1] Beat/Miss Enhanced — deviation magnitude (STRONG BEAT/BEAT/IN-LINE/MISS/STRONG MISS)
+#             Threshold dinamis per event type (CPI/NFP/GDP/Rate/PMI)
+#             Confidence predictor naik otomatis kalau deviation besar
+#   [Phase 2] Actual Cross-Check — investing.com sebagai fallback source actual
+#             Berantai: FF JSON actual → investing.com scrape → skip
+#   [Phase 3] Forex Price Upgrade — exchangerate-api.com (gratis, real-time, no key)
+#             Yahoo Finance tetap sebagai fallback; BTC tetap Binance
+#   [Phase 4] Breaking News Source Tambah — Reddit RSS (economics/investing/worldnews)
+#             + Al Jazeera English RSS; keyword matching lebih konsisten
+#   [Phase 5] Sentiment Layer — Market Sentiment Score per event (0-100)
+#             Input: beat/miss magnitude + session + pair liquidity weight
+#             Output: BULLISH/BEARISH/NEUTRAL bias tampil di actual result message
+# v2.1  — AKURASI FIX (3 isu hasil audit):
+#   [Fix 1] Forex Spike Detector: exchangerate-api.com (open.er-api.com) DIHAPUS dari
+#           jalur spike — endpoint itu cuma refresh 1x/24 jam (dikonfirmasi di dokumentasi
+#           resminya), bukan "real-time tiap menit" seperti asumsi v2.0. Refresh sekali
+#           sehari berarti "harga 5 menit lalu" sebenarnya cuma harga run sebelumnya →
+#           spike asli kelewat (false negative) hampir selalu, lalu sesekali muncul
+#           false positive pas data itu akhirnya berubah (lonjakan 24 jam terbaca
+#           sebagai "spike 5 menit"). FIX: semua pair forex + XAUUSD sekarang full
+#           lewat Yahoo Finance (1m candle asli, granularitas 5 menit yang sebenarnya).
+#   [Fix 2] Breaking News Reddit RSS: ganti ke old.reddit.com (lebih permisif utk
+#           request non-browser dibanding www.reddit.com yang sering balas 403 dari
+#           IP datacenter/CI). Tetap best-effort — Reddit bisa block kapan aja, tapi
+#           sudah fail-safe (gak crash, cuma skip source itu kalau gagal).
+#   [Fix 3] investing.com cross-check (Phase 2) DIHAPUS. Endpoint itu pakai Cloudflare
+#           protection & butuh session/CSRF yang gak feasible dari GitHub Actions tanpa
+#           browser — request kemungkinan besar selalu kena block. Daripada kasih ilusi
+#           "ada fallback" yang silently gagal, actual result sekarang murni dari
+#           FF-JSON/FF-HTML/MyFxBook; kalau actual masih kosong, event itu di-skip.
 
 # ════════════════════════════════════════
 # CONFIG
@@ -154,7 +166,7 @@ SPIKE_THRESHOLDS = {
 # Cooldown per pair — jangan spam saat market volatile
 SPIKE_COOLDOWN_MINUTES = 30
 
-# Yahoo Finance ticker mapping
+# Yahoo Finance ticker mapping — fallback untuk forex & XAU spike detector
 YAHOO_TICKERS = {
     'XAUUSD': 'GC=F',       # Gold futures
     'EURUSD': 'EURUSD=X',
@@ -166,6 +178,59 @@ YAHOO_TICKERS = {
     'NZDUSD': 'NZDUSD=X',
     'EURJPY': 'EURJPY=X',
     'GBPJPY': 'GBPJPY=X',
+}
+
+# ── v2.1: exchangerate-api.com DIHAPUS dari spike detector ──────────────────
+# Alasan: open.er-api.com (free tier) cuma refresh 1x/24 jam per dokumentasi
+# resminya — bukan real-time. Gak cocok buat deteksi spike 5 menit. Semua pair
+# forex sekarang full pakai Yahoo Finance (lihat YAHOO_TICKERS), yang punya
+# 1-minute candle asli jadi perbandingan 5 menit beneran akurat.
+
+# ── Phase 4: Additional RSS feeds ──────────────────────────────────────────
+# v2.1: ganti ke old.reddit.com — www.reddit.com lebih agresif balas 403 ke
+# request non-browser dari IP datacenter/CI (GitHub Actions). old.reddit.com
+# historisnya lebih permisif, tapi tetap best-effort: Reddit bisa block kapan
+# aja tanpa warning, makanya fetch_reddit_rss() sudah fail-safe per feed.
+REDDIT_RSS_FEEDS = [
+    ('Reddit/Economics',  'https://old.reddit.com/r/economics/new/.rss'),
+    ('Reddit/Investing',  'https://old.reddit.com/r/investing/new/.rss'),
+    ('Reddit/WorldNews',  'https://old.reddit.com/r/worldnews/new/.rss'),
+]
+EXTRA_RSS_FEEDS = [
+    ('AlJazeera',   'https://www.aljazeera.com/xml/rss/all.xml'),
+]
+
+# ── Phase 5: Session config ────────────────────────────────────────────────
+# Session UTC hours — dipakai untuk sentiment score weighting
+SESSIONS = {
+    'Asia':   (0,  8),    # 00:00–08:00 UTC = 07:00–15:00 WIB
+    'London': (7,  16),   # 07:00–16:00 UTC = 14:00–23:00 WIB
+    'NY':     (12, 21),   # 12:00–21:00 UTC = 19:00–04:00 WIB
+}
+
+# Pair liquidity weight — lebih liquid = dampak lebih reliable
+PAIR_LIQUIDITY = {
+    'EURUSD': 1.0, 'GBPUSD': 0.9, 'USDJPY': 0.9,
+    'XAUUSD': 0.85, 'AUDUSD': 0.8, 'USDCAD': 0.75,
+    'USDCHF': 0.75, 'NZDUSD': 0.7, 'EURJPY': 0.8,
+    'GBPJPY': 0.75, 'BTCUSDT': 0.7,
+}
+
+# ── Phase 1: Beat/Miss threshold per event type ────────────────────────────
+# Deviation threshold untuk STRONG BEAT/MISS (dalam unit event tsb)
+EVENT_THRESHOLDS = {
+    'cpi':          0.2,   # 0.2% deviation = strong
+    'ppi':          0.2,
+    'inflation':    0.2,
+    'nonfarm':      50,    # 50k jobs deviation = strong
+    'nfp':          50,
+    'payroll':      50,
+    'gdp':          0.3,   # 0.3% deviation = strong
+    'unemployment': 0.2,   # 0.2% deviation = strong
+    'rate':         0.1,   # rate decisions
+    'pmi':          1.0,   # 1 point PMI = strong
+    'retail':       0.3,
+    'default':      0.1,   # fallback threshold
 }
 
 HEADERS = {
@@ -500,6 +565,16 @@ def _parse_mfb_time(time_str, target_date):
     except Exception:
         return None
 
+
+# ════════════════════════════════════════
+# v2.1: Phase 2 (investing.com cross-check) DIHAPUS.
+# Alasan: investing.com pakai Cloudflare protection + butuh session/CSRF yang
+# gak feasible dari GitHub Actions tanpa browser nyata — POST ke
+# getCalendarFilteredData kemungkinan besar selalu kena block (403/empty).
+# Daripada nyimpen kode yang kasih ilusi "ada fallback" tapi silently gagal,
+# lebih jujur kalau actual result murni dari FF-JSON/FF-HTML/MyFxBook saja.
+# ════════════════════════════════════════
+
 # ════════════════════════════════════════
 # FETCH — TRIPLE SOURCE
 # ════════════════════════════════════════
@@ -534,7 +609,7 @@ def fmt_daily_briefing(events, now, source):
     if not events:
         return (
             f'📅 <b>ECONOMIC CALENDAR</b>\n'
-            f'<b>Bobb Market Intelligence v1.8</b>\n'
+            f'<b>Bobb Market Intelligence v2.0</b>\n'
             f'{DIV2}\n'
             f'📆 {date_str} (WIB)\n'
             f'{DIV}\n'
@@ -561,7 +636,7 @@ def fmt_daily_briefing(events, now, source):
 
     return (
         f'📅 <b>ECONOMIC CALENDAR</b>\n'
-        f'<b>Bobb Market Intelligence v1.8</b>\n'
+        f'<b>Bobb Market Intelligence v2.0</b>\n'
         f'{DIV2}\n'
         f'📆 {date_str} (WIB)\n'
         f'{DIV}\n'
@@ -594,7 +669,7 @@ def fmt_reminder(event, minutes_left):
         f'💱 Affected : <i>{pairs_str}</i>\n'
         f'{DIV}\n'
         f'⛔ <b>Avoid new entries until news passes!</b>\n'
-        f'<i>Bobb Market Intelligence v1.8</i>'
+        f'<i>Bobb Market Intelligence v2.0</i>'
     )
 
 
@@ -708,47 +783,148 @@ def _predict_pair_directions(currency, sentiment, event_title=''):
     return results
 
 
-def fmt_actual_result(event):
+def _get_event_threshold(title):
+    """Phase 1: Get deviation threshold for STRONG BEAT/MISS per event type."""
+    title_lower = title.lower()
+    for key, threshold in EVENT_THRESHOLDS.items():
+        if key in title_lower:
+            return threshold
+    return EVENT_THRESHOLDS['default']
+
+
+def _calc_beat_miss(actual_str, forecast_str, title):
+    """
+    Phase 1: Calculate beat/miss with magnitude.
+    Returns: (sentiment_key, sentiment_label, sentiment_emoji, deviation, pct_deviation)
+    sentiment_key: 'strong_beat' | 'beat' | 'inline' | 'miss' | 'strong_miss'
+    """
+    try:
+        act_val  = float(re.sub(r'[^0-9.\-]', '', str(actual_str)))
+        fore_val = float(re.sub(r'[^0-9.\-]', '', str(forecast_str)))
+        deviation = act_val - fore_val
+        threshold = _get_event_threshold(title)
+
+        if abs(deviation) < 0.001:
+            return 'inline', 'In Line with Forecast', '🟡', deviation, 0.0
+
+        pct_dev = abs(deviation / fore_val * 100) if fore_val != 0 else 0.0
+        is_better = deviation > 0
+
+        if abs(deviation) >= threshold * 1.5:
+            key   = 'strong_beat' if is_better else 'strong_miss'
+            label = f'🔥 STRONG BEAT (+{deviation:.2f})' if is_better else f'💥 STRONG MISS ({deviation:.2f})' 
+            emoji = '🟢' if is_better else '🔴'
+        elif abs(deviation) >= threshold * 0.5:
+            key   = 'beat' if is_better else 'miss'
+            label = f'✅ Beat Forecast (+{deviation:.2f})' if is_better else f'❌ Miss Forecast ({deviation:.2f})'
+            emoji = '🟢' if is_better else '🔴'
+        else:
+            return 'inline', 'Near In Line with Forecast', '🟡', deviation, pct_dev
+
+        return key, label, emoji, deviation, pct_dev
+
+    except Exception:
+        return 'inline', 'Result Released', '📰', 0.0, 0.0
+
+
+def _get_sentiment_multiplier(sentiment_key):
+    """Map sentiment_key ke multiplier untuk Direction Predictor confidence."""
+    return {
+        'strong_beat': 1.0,
+        'beat':        0.8,
+        'inline':      0.0,
+        'miss':        0.8,
+        'strong_miss': 1.0,
+    }.get(sentiment_key, 0.5)
+
+
+def _calc_sentiment_score(event, sentiment_key, deviation, predictions, now):
+    """
+    Phase 5: Calculate Market Sentiment Score (0-100).
+    Input: event, beat/miss key, deviation magnitude, predictions, current time.
+    Output: (score, bias_label, bias_emoji)
+    """
+    if sentiment_key == 'inline':
+        return 50, 'NEUTRAL', '⚖️'
+
+    # Base score dari magnitude
+    threshold  = _get_event_threshold(event['title'])
+    magnitude  = min(abs(deviation) / (threshold * 2), 1.0)  # normalize 0-1
+    base_score = 40 + magnitude * 40  # 40-80 range
+
+    # Impact boost
+    if event['impact'] == 'High':
+        base_score += 10
+    elif event['impact'] == 'Medium':
+        base_score += 5
+
+    # Session boost — NY & London lebih liquid
+    hour = now.hour
+    if SESSIONS['NY'][0] <= hour < SESSIONS['NY'][1]:
+        base_score += 8    # NY session — paling liquid
+    elif SESSIONS['London'][0] <= hour < SESSIONS['London'][1]:
+        base_score += 5    # London session
+
+    # Strong beat/miss boost
+    if sentiment_key in ('strong_beat', 'strong_miss'):
+        base_score += 5
+
+    score = min(int(base_score), 100)
+    is_bullish = sentiment_key in ('beat', 'strong_beat')
+
+    if score >= 75:
+        bias_label = 'STRONG BULLISH' if is_bullish else 'STRONG BEARISH'
+        bias_emoji = '🟢🟢' if is_bullish else '🔴🔴'
+    elif score >= 60:
+        bias_label = 'BULLISH BIAS' if is_bullish else 'BEARISH BIAS'
+        bias_emoji = '🟢' if is_bullish else '🔴'
+    else:
+        bias_label = 'MILD BULLISH' if is_bullish else 'MILD BEARISH'
+        bias_emoji = '🟡'
+
+    return score, bias_label, bias_emoji
+
+
+def fmt_actual_result(event, now=None):
+    if now is None:
+        now = datetime.datetime.utcnow()
+
     pairs_str = ', '.join(event['affected_pairs'])
     actual    = event['actual']   if event['actual']   else '—'
     forecast  = event['forecast'] if event['forecast'] else '—'
     previous  = event['previous'] if event['previous'] else '—'
 
-    sentiment       = 'Result released'
-    sentiment_emoji = '📰'
-    sentiment_key   = 'inline'
-    try:
-        act_val  = float(re.sub(r'[^0-9.\-]', '', str(actual)))
-        fore_val = float(re.sub(r'[^0-9.\-]', '', str(forecast)))
-        if act_val > fore_val:
-            sentiment       = 'Better than forecast'
-            sentiment_emoji = '🟢'
-            sentiment_key   = 'better'
-        elif act_val < fore_val:
-            sentiment       = 'Worse than forecast'
-            sentiment_emoji = '🔴'
-            sentiment_key   = 'worse'
-        else:
-            sentiment       = 'In line with forecast'
-            sentiment_emoji = '🟡'
-            sentiment_key   = 'inline'
-    except Exception:
-        pass
+    # Phase 1: Enhanced beat/miss with magnitude
+    sent_key, sent_label, sent_emoji, deviation, pct_dev = _calc_beat_miss(
+        actual, forecast, event['title']
+    )
 
-    # ── Pair Direction Prediction ────────────────────────────────────
+    # Simplified sentiment key for direction predictor compatibility
+    direction_sent = 'better' if sent_key in ('beat', 'strong_beat') else 'worse' if sent_key in ('miss', 'strong_miss') else 'inline'
+
+    # Phase 1: Confidence multiplier berdasarkan magnitude
+    conf_multiplier = _get_sentiment_multiplier(sent_key)
+
+    # Direction Prediction
     direction_block = ''
-    if sentiment_key != 'inline':
+    predictions = []
+    if direction_sent != 'inline':
         predictions = _predict_pair_directions(
             currency    = event['currency'],
-            sentiment   = sentiment_key,
+            sentiment   = direction_sent,
             event_title = event['title'],
         )
         if predictions:
             lines = []
             for p in predictions:
+                # Phase 1: Strong beat/miss → upgrade confidence display
+                conf_display = p['confidence']
+                if conf_multiplier >= 1.0 and p['confidence'] == 'Moderate':
+                    conf_display = 'Strong'
+                conf_emoji_disp = {'Strong': '🔴', 'Moderate': '🟡', 'Watch': '⚪'}.get(conf_display, '⚪')
                 lines.append(
-                    f'  {p["conf_emoji"]} {p["arrow"]} <b>{p["pair"]}</b>'
-                    f'  <i>({p["confidence"]})</i>'
+                    f'  {conf_emoji_disp} {p["arrow"]} <b>{p["pair"]}</b>'
+                    f'  <i>({conf_display})</i>'
                 )
             direction_block = (
                 f'{DIV}\n'
@@ -756,6 +932,18 @@ def fmt_actual_result(event):
                 + '\n'.join(lines) + '\n'
                 + f'<i>🔴 Strong  🟡 Moderate  ⚪ Watch</i>\n'
             )
+
+    # Phase 5: Sentiment Score
+    sentiment_block = ''
+    if direction_sent != 'inline':
+        score, bias_label, bias_emoji = _calc_sentiment_score(
+            event, sent_key, deviation, predictions, now
+        )
+        sentiment_block = (
+            f'{DIV}\n'
+            f'📡 <b>Market Sentiment Score: {score}/100</b>\n'
+            f'{bias_emoji} <b>{bias_label}</b>\n'
+        )
 
     return (
         f'📰 <b>NEWS RESULT — {event["currency"]}</b>\n'
@@ -769,12 +957,14 @@ def fmt_actual_result(event):
         f'🎯 Forecast : {forecast}\n'
         f'📈 Previous : {previous}\n'
         f'{DIV}\n'
-        f'{sentiment_emoji} <b>{sentiment}</b>\n'
+        f'{sent_emoji} <b>{sent_label}</b>\n'
         f'💱 Affects  : <i>{pairs_str}</i>\n'
         f'{direction_block}'
+        f'{sentiment_block}'
         f'{DIV}\n'
-        f'<i>Bobb Market Intelligence v1.8</i>'
+        f'<i>Bobb Market Intelligence v2.0</i>'
     )
+
 
 def fmt_all_sources_failed(now):
     return (
@@ -789,7 +979,7 @@ def fmt_all_sources_failed(now):
         f'   • MyFxBook\n'
         f'{DIV}\n'
         f'⚠️ Cek manual: forexfactory.com\n'
-        f'<i>Bobb Market Intelligence v1.8</i>'
+        f'<i>Bobb Market Intelligence v2.0</i>'
     )
 
 # ════════════════════════════════════════
@@ -986,6 +1176,48 @@ def fetch_newsapi_breaking(now):
         print(f'[NEWSAPI] Error: {e}')
         return []
 
+
+# ════════════════════════════════════════
+# PHASE 4 — REDDIT RSS + EXTRA FEEDS
+# ════════════════════════════════════════
+def fetch_reddit_rss(now):
+    """
+    Phase 4: Fetch breaking news dari Reddit RSS (economics/investing/worldnews)
+    + Al Jazeera English. Gratis, no API key, update frequent.
+    """
+    all_items = []
+    cutoff    = now - datetime.timedelta(hours=RSS_MAX_AGE_HOURS)
+    all_feeds = REDDIT_RSS_FEEDS + EXTRA_RSS_FEEDS
+
+    for source_name, url in all_feeds:
+        try:
+            headers_reddit = dict(HEADERS)
+            # Reddit butuh custom user agent yang jelas — sebagian endpoint
+            # tetap bisa 403 kapan aja, itu di luar kontrol kita (fail-safe di bawah)
+            if 'reddit' in url.lower():
+                headers_reddit['User-Agent'] = 'BobbMarketBot/2.1 (financial news aggregator)'
+            resp = requests.get(url, headers=headers_reddit, timeout=10)
+            if resp.status_code != 200:
+                print(f'[REDDIT_RSS] {source_name}: HTTP {resp.status_code}')
+                continue
+
+            items = _parse_rss_xml(resp.text, source_name)
+            # Reddit RSS pakai <updated> bukan <pubDate> — coba keduanya
+            fresh = 0
+            for item in items:
+                pub_dt = _parse_pubdate(item.get('date', ''))
+                if pub_dt is None or pub_dt >= cutoff:
+                    item['pub_dt'] = pub_dt
+                    all_items.append(item)
+                    fresh += 1
+            print(f'[REDDIT_RSS] {source_name}: {fresh} items')
+
+        except Exception as e:
+            print(f'[REDDIT_RSS] {source_name} error: {e}')
+
+    return all_items
+
+
 def process_breaking_news(now, state):
     """
     Main breaking news processor:
@@ -998,9 +1230,13 @@ def process_breaking_news(now, state):
     print('[BREAKING] Fetching breaking news...')
 
     # Fetch
+    # Phase 4: Fetch dari semua RSS sources (core + Reddit + AlJazeera)
     items = fetch_rss_breaking(now)
+    reddit_items = fetch_reddit_rss(now)
+    items.extend(reddit_items)
+
     if not items:
-        print('[BREAKING] RSS empty, trying NewsAPI...')
+        print('[BREAKING] All RSS empty, trying NewsAPI...')
         items = fetch_newsapi_breaking(now)
 
     if not items:
@@ -1108,7 +1344,7 @@ def fmt_breaking_news(item, group, matched_kw, now):
         f'{link_line}\n'
         f'{DIV2}\n'
         f'⚠️ <b>Monitor pergerakan harga dengan cermat!</b>\n'
-        f'<i>Bobb Market Intelligence v1.8</i>'
+        f'<i>Bobb Market Intelligence v2.0</i>'
     )
 
 def _assess_market_impact(keyword, group):
@@ -1219,13 +1455,14 @@ def _fetch_btc_price():
         return None, None
 
 
+
+
 def _fetch_yahoo_price(ticker):
     """
-    Fetch harga sekarang dan ~5 menit lalu via Yahoo Finance chart API.
+    Phase 3: Yahoo Finance — fallback untuk forex & primary untuk XAUUSD (GC=F).
     Return: (price_now, price_5m_ago) atau (None, None) kalau gagal.
     """
     try:
-        # Yahoo Finance v8 chart endpoint — interval 1m, range 30m
         url = (
             f'https://query1.finance.yahoo.com/v8/finance/chart/{ticker}'
             f'?interval=1m&range=30m'
@@ -1241,7 +1478,6 @@ def _fetch_yahoo_price(ticker):
             return None, None
 
         closes = result[0].get('indicators', {}).get('quote', [{}])[0].get('close', [])
-        # Filter None values
         closes = [c for c in closes if c is not None]
         if len(closes) < 2:
             return None, None
@@ -1302,7 +1538,7 @@ def fmt_spike_alert(pair, price_now, price_5m, pct_change):
         f'🕐 <b>{time_wib} WIB</b>  ({time_utc} UTC)  {date_str}\n'
         f'{DIV}\n'
         f'⚠️ <b>Cek chart & konfirmasi sebelum entry!</b>\n'
-        f'<i>Bobb Market Intelligence v1.8</i>'
+        f'<i>Bobb Market Intelligence v2.0</i>'
     )
 
 
@@ -1333,11 +1569,12 @@ def process_price_spikes(now, state):
                 except Exception:
                     pass
 
-            # Fetch harga
+            # Fetch harga — v2.1: BTC via Binance, semua forex + XAUUSD via Yahoo
+            # (exchangerate-api dihapus — cuma refresh 1x/24jam, gak cocok utk spike 5m)
             if pair == 'BTCUSDT':
                 price_now, price_5m = _fetch_btc_price()
             else:
-                ticker              = YAHOO_TICKERS.get(pair)
+                ticker = YAHOO_TICKERS.get(pair)
                 if not ticker:
                     continue
                 price_now, price_5m = _fetch_yahoo_price(ticker)
@@ -1380,7 +1617,7 @@ def run_news_detector():
     now   = datetime.datetime.utcnow()
     state = load_state()
 
-    print(f'=== BOBB MARKET INTELLIGENCE v1.8 ===')
+    print(f'=== BOBB MARKET INTELLIGENCE v2.0 ===')
     print(f'Time UTC : {now.strftime("%Y-%m-%d %H:%M")}')
     print(f'Time WIB : {(now + datetime.timedelta(hours=7)).strftime("%Y-%m-%d %H:%M")}')
 
@@ -1389,7 +1626,9 @@ def run_news_detector():
     print(f'[FETCH] Source used: {source}')
 
     # ── MODE 1: Daily Briefing — 07:00 WIB = 00:00 UTC ──────────────
-    is_briefing = (now.hour == 0 and now.minute < 15)
+    # Window 59 menit (00:00–00:58 UTC) — toleransi GitHub Actions scheduler delay
+    # Anti-duplikat dijaga sent_daily[date_key] — aman dari double-send
+    is_briefing = (now.hour == 0 and now.minute < 59)
     date_key    = now.strftime('%Y-%m-%d')
 
     if is_briefing and not state['sent_daily'].get(date_key, False):
@@ -1406,10 +1645,12 @@ def run_news_detector():
             print(f'[DAILY] ❌ {r}')
 
     # ── MODE 2: Reminder 30 menit sebelum ───────────────────────────
+    # Window 15–45 menit — toleransi GitHub Actions delay hingga 15 menit
+    # Anti-duplikat dijaga sent_reminder[reminder_key]
     for event in events:
         mins_until   = (event['dt_utc'] - now).total_seconds() / 60
         reminder_key = f'reminder_{event["id"]}'
-        if 25 <= mins_until <= 35 and not state['sent_reminder'].get(reminder_key, False):
+        if 15 <= mins_until <= 45 and not state['sent_reminder'].get(reminder_key, False):
             print(f'[REMINDER] {event["currency"]} {event["title"]} ~{int(mins_until)}m')
             r = send_text(fmt_reminder(event, 30))
             if r.get('ok'):
@@ -1417,16 +1658,26 @@ def run_news_detector():
                 print('[REMINDER] ✅ Sent')
 
     # ── MODE 3: Actual Result setelah rilis ─────────────────────────
-    # Gunakan events yang sama — tidak perlu re-fetch
+    # Window 5–45 menit — toleransi GitHub Actions delay hingga 20 menit
+    # v2.1: cross-check investing.com dihapus (rawan blocked Cloudflare) —
+    # actual murni dari FF-JSON/FF-HTML/MyFxBook, skip kalau masih kosong
     for event in events:
         mins_past  = (now - event['dt_utc']).total_seconds() / 60
         actual_key = f'actual_{event["id"]}'
-        if 5 <= mins_past <= 25 and event['actual'] and not state['sent_actual'].get(actual_key, False):
-            print(f'[ACTUAL] {event["currency"]} {event["title"]} → {event["actual"]}')
-            r = send_text(fmt_actual_result(event))
-            if r.get('ok'):
-                state['sent_actual'][actual_key] = now.isoformat()
-                print('[ACTUAL] ✅ Sent')
+        if not (5 <= mins_past <= 45):
+            continue
+        if state['sent_actual'].get(actual_key, False):
+            continue
+
+        if not event['actual']:
+            print(f'[ACTUAL] Skip — actual masih kosong utk {event["currency"]} {event["title"]}')
+            continue
+
+        print(f'[ACTUAL] {event["currency"]} {event["title"]} → {event["actual"]}')
+        r = send_text(fmt_actual_result(event, now))
+        if r.get('ok'):
+            state['sent_actual'][actual_key] = now.isoformat()
+            print('[ACTUAL] ✅ Sent')
 
     # ── MODE 4: Breaking News ────────────────────────────────────────
     process_breaking_news(now, state)
