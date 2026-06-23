@@ -227,10 +227,20 @@ EVENT_THRESHOLDS = {
     'payroll':      50,
     'gdp':          0.3,   # 0.3% deviation = strong
     'unemployment': 0.2,   # 0.2% deviation = strong
-    'rate':         0.1,   # rate decisions
+    'rate':         0.25,  # rate decisions — bank sentral major gerak per 25bps,
+                           # jadi deviasi < 1 langkah (0.25%) belum "strong"
     'pmi':          1.0,   # 1 point PMI = strong
     'retail':       0.3,
-    'default':      0.1,   # fallback threshold
+    'trade balance': 1.0,  # dalam $billion — deviasi kecil di angka besar ini wajar
+    'consumer confidence': 3.0,   # index poin — lebih volatile dari PMI
+    'consumer sentiment':  3.0,
+    'durable goods': 0.5,  # %
+    'housing':      0.3,   # starts/permits/sales, dalam %
+    'building permits': 0.3,
+    'industrial production': 0.3,
+    'trade deficit': 1.0,
+    'default':      0.15,  # fallback dinaikkan sedikit — 0.1 kelewat sensitif
+                           # untuk event yang belum ke-cover spesifik di atas
 }
 
 HEADERS = {
