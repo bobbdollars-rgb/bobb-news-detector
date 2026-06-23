@@ -1,14 +1,24 @@
-name: Bobb Market Intelligence v1.8
+name: Bobb Market Intelligence v2.1
 
 on:
   schedule:
-    - cron: '*/5 * * * *'
+    # Tiap 15 menit — balance antara responsiveness & free tier quota
+    # GitHub Actions free tier: 2000 menit/bulan
+    # 15 menit → 2880 run/bulan × ~1 menit eksekusi = ~2880 menit → aman di free tier
+    # Window reminder (15–45m) & actual (5–45m) sudah di-design untuk toleransi 15 menit
+    - cron: '*/15 * * * *'
+
+  # Manual trigger — buat testing
   workflow_dispatch:
 
 jobs:
   run-detector:
     runs-on: ubuntu-latest
-    timeout-minutes: 4
+    # v2.1: naik dari 4→6 menit. Worst-case semua network call timeout
+    # (FF-JSON/HTML/MyFxBook + 7 RSS + 4 Reddit/AlJazeera + 10 pair price check)
+    # bisa mendekati 4 menit kalau koneksi lemot — kasih margin biar gak ke-kill
+    # di tengah jalan (state belum ke-save = dedup utk run itu hilang).
+    timeout-minutes: 6
 
     steps:
       - name: Checkout repo
@@ -23,8 +33,21 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      # v2.1 FIX — bug kritis: key sebelumnya statis ("news-state-latest").
+      # actions/cache TIDAK bisa overwrite cache dengan key yang sama persis.
+      # Akibatnya: run pertama berhasil save, tapi SEMUA run berikutnya gagal
+      # save secara diam-diam ("Cache already exists" warning, job tetap hijau).
+      # Dedup/cooldown state jadi beku di kondisi run #1 selamanya → reminder,
+      # actual result, breaking news, & spike alert bisa terkirim ULANG tiap
+      # run dalam window waktu yang sama, karena state-nya gak pernah ke-update.
+      #
+      # FIX: key UNIK per run (pakai github.run_id) khusus untuk SAVE, dan
+      # restore-keys dengan prefix untuk ambil cache TERBARU saat restore.
+      # Cache lama otomatis di-garbage-collect GitHub kalau gak diakses 7 hari,
+      # jadi gak perlu cleanup manual.
       - name: Restore news state cache
-        uses: actions/cache@v4
+        id: cache-restore
+        uses: actions/cache/restore@v4
         with:
           path: bobb_news_state.json
           key: news-state-${{ github.run_id }}
@@ -38,9 +61,11 @@ jobs:
           NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}
         run: python bobb_news_detector.py
 
+      # Save state setelah run — key unik per run_id supaya SELALU berhasil
+      # ke-save (gak pernah collide sama cache run sebelumnya)
       - name: Save news state cache
-        if: always()
-        uses: actions/cache@v4
+        if: always()   # Simpan meskipun ada error
+        uses: actions/cache/save@v4
         with:
           path: bobb_news_state.json
           key: news-state-${{ github.run_id }}
