@@ -5,7 +5,7 @@ warnings.filterwarnings('ignore')
 # ════════════════════════════════════════
 # VERSION
 # ════════════════════════════════════════
-VERSION = 'v2.1'
+VERSION = 'v2.4'
 # v1.0  — Initial standalone news detector
 # v1.1  — Dual source FF scraping + MyFxBook fallback
 # v1.2  — Primary FF JSON, fallback FF HTML + MyFxBook
@@ -30,6 +30,56 @@ VERSION = 'v2.1'
 #   [Phase 5] Sentiment Layer — Market Sentiment Score per event (0-100)
 #             Input: beat/miss magnitude + session + pair liquidity weight
 #             Output: BULLISH/BEARISH/NEUTRAL bias tampil di actual result message
+# v2.4  — FEATURE UPGRADE BATCH 2 (5 fitur baru):
+#   [F7]  No-Trade Zone Alert — 15m sebelum & 15m setelah setiap High impact event
+#         Kirim "⛔ NO-TRADE ZONE" dengan countdown ke event + pairs yang terdampak.
+#         Anti-duplikat via sent_notrade[zone_key]. Tidak jalan di atas reminder.
+#   [F8]  Event Cluster Warning — kalau ≥3 High impact dalam 60 menit ke depan
+#         Kirim "⚠️ EVENT CLUSTER" sekali per kluster. Anti-duplikat via
+#         sent_cluster[cluster_key]. Bantu trader skip hari yang terlalu volatile.
+#   [F9]  Economic Surprise Index — track akumulasi beat/miss per currency (7 hari)
+#         Setiap actual result update streak. Kalau streak ≥3 → kirim alert
+#         "USD Surprise Streak: 🔥 3x BEAT" — macro momentum real-time.
+#         State: surprise_index[currency] = {streak, direction, last_event, ts}
+#   [F10] Asia Session Open Alert — Tokyo open 02:00 UTC / 09:00 WIB
+#         Sama seperti London/NY tapi fokus USDJPY, AUDUSD, XAUUSD Asia context.
+#         Tambahan: recap overnight event (event yang rilis 0–6 jam sebelumnya).
+#   [F11] Daily Close Summary — NY close 21:00 UTC / 04:00 WIB
+#         Recap hari: event apa yang rilis, beat/miss count, USD direction hari ini,
+#         pair yang paling volatile (berdasarkan spike data). Window 21:00–21:58 UTC.
+# v2.3  — FEATURE UPGRADE (6 fitur baru):
+#   [F1] Weekly High-Impact Preview — Minggu malam 20:00 WIB (13:00 UTC)
+#        Kirim ringkasan semua event High/Medium impact minggu depan: NFP, CPI, FOMC, dll.
+#        Anti-duplikat via sent_weekly[week_key]. Berguna untuk planning D1/H4 bias.
+#   [F2] Session Open Alert — London (14:00 WIB/07:00 UTC) & NY (19:00 WIB/12:00 UTC)
+#        Alert masuk killzone ICT dengan daftar event hari ini yang relevan.
+#        Anti-duplikat via sent_session[session_key]. Window 5 menit per session.
+#   [F3] Spike Sustained Filter — spike harus konsisten di 2 titik harga berbeda
+#        Cek: harga 1 menit lalu JUGA melewati threshold (bukan cuma snapshot sesaat).
+#        Kurangi false positive saat spread lebar / liquidity grab sesaat.
+#   [F4] Post-FOMC Follow-up Alert — 60 menit setelah FOMC/Rate Decision rilis
+#        Kirim update arah market setelah debu mereda. Deteksi event via keyword
+#        'rate', 'fomc', 'interest rate', 'monetary policy' di title event.
+#        Anti-duplikat via sent_fomc_followup[followup_key].
+#   [F5] Daily Bias Summary — dikirim bareng Daily Briefing (07:00 WIB)
+#        Rangkum bias USD/XAU berdasarkan event High impact hari ini + previous data.
+#        Output: "USD bias HAWKISH (NFP + CPI hari ini)" atau "XAU bias BULLISH".
+#   [F6] Weekend/Holiday Spike Suppressor — Sabtu & Minggu UTC
+#        Spike threshold dinaikkan 3x weekend (spread lebar, liquidity tipis).
+#        Alert tetap jalan tapi hanya untuk gerakan ekstrem yang benar-benar signifikan.
+# v2.2  — CI RELIABILITY FIX (3 isu dari GitHub Actions logs):
+#   [Fix 1] BTC Spike: Binance HTTP 451 (IP datacenter GitHub Actions di-block
+#           Binance karena alasan legal/geo). Ganti ke CoinGecko public API
+#           (gratis, no key, lebih permisif dari CI/datacenter IP).
+#           Primary: CoinGecko /coins/bitcoin/market_chart?interval=minute&days=1
+#           Harga diambil dari list 'prices' — ambil entry terakhir (now) dan
+#           entry 5 menit lalu. Binance tetap sebagai fallback.
+#   [Fix 2] Reuters RSS: DNS fail (feeds.reuters.com tidak resolve dari GitHub
+#           Actions runner). Ganti ke AP News RSS + Politico RSS — lebih reliabel
+#           dari CI environment, konten berita tetap relevan.
+#   [Fix 3] Reddit RSS 403/429: Tambah fallback HackerNews RSS
+#           (https://hnrss.org/frontpage) — open, no auth, CI-friendly.
+#           Reddit tetap dicoba (best-effort), HN jadi safety net tambahan.
 # v2.1  — AKURASI FIX (3 isu hasil audit):
 #   [Fix 1] Forex Spike Detector: exchangerate-api.com (open.er-api.com) DIHAPUS dari
 #           jalur spike — endpoint itu cuma refresh 1x/24 jam (dikonfirmasi di dokumentasi
@@ -107,12 +157,11 @@ BREAKING_KEYWORDS = {
 # Cooldown — jangan kirim berita dari group yang sama dalam X jam
 BREAKING_COOLDOWN_HOURS = 4
 
-# RSS Feeds — gratis, tidak perlu API key
-# Bloomberg & MarketWatch dihapus — sudah block RSS publik
-# FT dihapus — paywall, return 401/403 di GitHub Actions
+# v2.2: Reuters dihapus — feeds.reuters.com DNS fail dari GitHub Actions runner.
+# Ganti ke AP News & Politico — reliabel dari CI, konten tetap relevan.
 RSS_FEEDS = [
-    ('Reuters',   'https://feeds.reuters.com/reuters/businessNews'),
-    ('Reuters',   'https://feeds.reuters.com/reuters/topNews'),
+    ('AP News',   'https://feeds.apnews.com/apnews/topnews'),
+    ('AP News',   'https://feeds.apnews.com/apnews/business'),
     ('BBC',       'https://feeds.bbci.co.uk/news/business/rss.xml'),
     ('BBC',       'https://feeds.bbci.co.uk/news/world/rss.xml'),
     ('CNBC',      'https://www.cnbc.com/id/10000664/device/rss/rss.html'),
@@ -166,7 +215,60 @@ SPIKE_THRESHOLDS = {
 # Cooldown per pair — jangan spam saat market volatile
 SPIKE_COOLDOWN_MINUTES = 30
 
-# Yahoo Finance ticker mapping — fallback untuk forex & XAU spike detector
+# ── v2.3: Weekend spike multiplier ─────────────────────────────────────────
+# Sabtu & Minggu UTC: spread lebar, liquidity tipis → threshold dinaikkan 3x
+# Alert tetap jalan tapi hanya untuk gerakan yang benar-benar ekstrem
+SPIKE_WEEKEND_MULTIPLIER = 3.0
+
+# ── v2.3: Session Open Alert ────────────────────────────────────────────────
+# London Open: 07:00 UTC = 14:00 WIB | NY Open: 12:00 UTC = 19:00 WIB
+# Window 5 menit per session (00–04 menit setelah jam buka)
+SESSION_OPENS = {
+    'London': {'utc_hour': 7,  'utc_minute': 0, 'wib': '14:00', 'emoji': '🇬🇧'},
+    'NY':     {'utc_hour': 12, 'utc_minute': 0, 'wib': '19:00', 'emoji': '🇺🇸'},
+}
+SESSION_OPEN_WINDOW_MINUTES = 5   # alert hanya dalam 5 menit pertama setelah open
+
+# ── v2.3: Weekly Preview ────────────────────────────────────────────────────
+# Minggu malam 20:00 WIB = 13:00 UTC — sebelum market Asia buka
+# Window 59 menit (13:00–13:58 UTC) toleransi GitHub Actions delay
+WEEKLY_PREVIEW_UTC_HOUR   = 13
+WEEKLY_PREVIEW_UTC_MINUTE = 0    # window: 13:00–13:58 UTC setiap Minggu
+
+# ── v2.3: FOMC / High-Impact CB event keywords ─────────────────────────────
+# Event dengan keyword ini mendapat Post-Release Follow-up 60 menit setelah rilis
+FOMC_KEYWORDS = [
+    'rate decision', 'interest rate', 'fomc', 'monetary policy statement',
+    'fed funds rate', 'boe rate', 'ecb rate', 'boj rate', 'rba rate',
+    'cash rate', 'overnight rate', 'bank rate',
+]
+
+# ── v2.4: No-Trade Zone config ──────────────────────────────────────────────
+# Alert 15m sebelum & 15m setelah event High impact
+NO_TRADE_BEFORE_MINS = 15
+NO_TRADE_AFTER_MINS  = 15
+
+# ── v2.4: Event Cluster config ───────────────────────────────────────────────
+# Warning kalau ≥ N High impact event dalam window X menit ke depan
+CLUSTER_MIN_EVENTS   = 3
+CLUSTER_WINDOW_MINS  = 60
+
+# ── v2.4: Economic Surprise Index ────────────────────────────────────────────
+# Alert kalau streak beat/miss ≥ threshold
+SURPRISE_STREAK_ALERT = 3   # kirim alert kalau streak ≥ 3
+
+# ── v2.4: Asia Session Open ──────────────────────────────────────────────────
+# Tokyo open 02:00 UTC = 09:00 WIB
+ASIA_SESSION_UTC_HOUR   = 2
+ASIA_SESSION_UTC_MINUTE = 0
+ASIA_SESSION_WIB        = '09:00'
+
+# ── v2.4: Daily Close Summary ────────────────────────────────────────────────
+# NY close 21:00 UTC = 04:00 WIB
+DAILY_CLOSE_UTC_HOUR   = 21
+DAILY_CLOSE_UTC_MINUTE = 0
+
+
 YAHOO_TICKERS = {
     'XAUUSD': 'GC=F',       # Gold futures
     'EURUSD': 'EURUSD=X',
@@ -198,6 +300,9 @@ REDDIT_RSS_FEEDS = [
 ]
 EXTRA_RSS_FEEDS = [
     ('AlJazeera',   'https://www.aljazeera.com/xml/rss/all.xml'),
+    # v2.2: HackerNews sebagai safety net — open, no auth, CI-friendly
+    # Relevan untuk berita macro/tech/crypto yang sering muncul di HN
+    ('HackerNews',  'https://hnrss.org/frontpage'),
 ]
 
 # ── Phase 5: Session config ────────────────────────────────────────────────
@@ -258,10 +363,22 @@ DIV2 = '═' * 30
 # ════════════════════════════════════════
 def load_state():
     default = {
-        'sent_daily':    {},
-        'sent_reminder': {},
-        'sent_actual':   {},
-        'sent_breaking': {},   # title_hash -> timestamp string
+        'sent_daily':         {},
+        'sent_reminder':      {},
+        'sent_actual':        {},
+        'sent_breaking':      {},   # title_hash -> timestamp string
+        'sent_spike':         {},   # v1.7
+        'sent_session':       {},   # v2.3: London/NY open alert
+        'sent_weekly':        {},   # v2.3: weekly preview
+        'sent_fomc_followup': {},   # v2.3: post-FOMC follow-up
+        'spike_prev':         {},   # v2.3: sustained filter prev value
+        'sent_notrade':       {},   # v2.4: no-trade zone alert
+        'sent_cluster':       {},   # v2.4: event cluster warning
+        'surprise_index':     {},   # v2.4: economic surprise streak per currency
+        'sent_surprise':      {},   # v2.4: surprise streak alert dedup
+        'sent_close':         {},   # v2.4: daily close summary
+        'daily_actuals':      {},   # v2.4: collect today's actual results for close summary
+        'daily_spikes':       {},   # v2.4: collect today's spikes for close summary
     }
     if not os.path.exists(STATE_FILE):
         return default
@@ -624,13 +741,13 @@ def fetch_events(target_date):
 # ════════════════════════════════════════
 # FORMAT MESSAGES
 # ════════════════════════════════════════
-def fmt_daily_briefing(events, now, source):
+def fmt_daily_briefing(events, now, source, bias_block=''):
     date_str = (now + datetime.timedelta(hours=7)).strftime('%A, %d %b %Y')
 
     if not events:
         return (
             f'📅 <b>ECONOMIC CALENDAR</b>\n'
-            f'<b>Bobb Market Intelligence v2.1</b>\n'
+            f'<b>Bobb Market Intelligence v2.4</b>\n'
             f'{DIV2}\n'
             f'📆 {date_str} (WIB)\n'
             f'{DIV}\n'
@@ -657,12 +774,13 @@ def fmt_daily_briefing(events, now, source):
 
     return (
         f'📅 <b>ECONOMIC CALENDAR</b>\n'
-        f'<b>Bobb Market Intelligence v2.1</b>\n'
+        f'<b>Bobb Market Intelligence v2.4</b>\n'
         f'{DIV2}\n'
         f'📆 {date_str} (WIB)\n'
         f'{DIV}\n'
         f'🔴 High Impact  : <b>{len(high_ev)}</b> event(s)\n'
         f'🟡 Medium Impact: <b>{len(medium_ev)}</b> event(s)\n'
+        f'{bias_block}'
         f'{DIV}\n'
         f'{lines}'
         f'{DIV}\n'
@@ -690,7 +808,7 @@ def fmt_reminder(event, minutes_left):
         f'💱 Affected : <i>{pairs_str}</i>\n'
         f'{DIV}\n'
         f'⛔ <b>Avoid new entries until news passes!</b>\n'
-        f'<i>Bobb Market Intelligence v2.1</i>'
+        f'<i>Bobb Market Intelligence v2.4</i>'
     )
 
 
@@ -983,7 +1101,7 @@ def fmt_actual_result(event, now=None):
         f'{direction_block}'
         f'{sentiment_block}'
         f'{DIV}\n'
-        f'<i>Bobb Market Intelligence v2.1</i>'
+        f'<i>Bobb Market Intelligence v2.4</i>'
     )
 
 
@@ -1000,7 +1118,7 @@ def fmt_all_sources_failed(now):
         f'   • MyFxBook\n'
         f'{DIV}\n'
         f'⚠️ Cek manual: forexfactory.com\n'
-        f'<i>Bobb Market Intelligence v2.1</i>'
+        f'<i>Bobb Market Intelligence v2.4</i>'
     )
 
 # ════════════════════════════════════════
@@ -1216,7 +1334,7 @@ def fetch_reddit_rss(now):
             # Reddit butuh custom user agent yang jelas — sebagian endpoint
             # tetap bisa 403 kapan aja, itu di luar kontrol kita (fail-safe di bawah)
             if 'reddit' in url.lower():
-                headers_reddit['User-Agent'] = 'BobbMarketBot/2.1 (financial news aggregator)'
+                headers_reddit['User-Agent'] = 'BobbMarketBot/2.3 (financial news aggregator)'
             resp = requests.get(url, headers=headers_reddit, timeout=10)
             if resp.status_code != 200:
                 print(f'[REDDIT_RSS] {source_name}: HTTP {resp.status_code}')
@@ -1367,7 +1485,7 @@ def fmt_breaking_news(item, group, matched_kw, now):
         f'{link_line}\n'
         f'{DIV2}\n'
         f'⚠️ <b>Monitor pergerakan harga dengan cermat!</b>\n'
-        f'<i>Bobb Market Intelligence v2.1</i>'
+        f'<i>Bobb Market Intelligence v2.4</i>'
     )
 
 def _assess_market_impact(keyword, group):
@@ -1456,26 +1574,51 @@ def _assess_market_impact(keyword, group):
 # ════════════════════════════════════════
 def _fetch_btc_price():
     """
-    Fetch BTCUSDT harga sekarang dan 5 menit lalu via Binance public API.
+    Fetch BTCUSDT harga sekarang dan 5 menit lalu.
+    v2.2: Primary = CoinGecko public API (no key, CI-friendly).
+          Fallback = Binance (kena HTTP 451 dari GitHub Actions IP, tapi tetap dicoba).
     Return: (price_now, price_5m_ago) atau (None, None) kalau gagal.
     """
+    # ── PRIMARY: CoinGecko ───────────────────────────────────────────────────
+    # /market_chart: interval=minute, days=1 → list of [timestamp_ms, price]
+    # Ambil entry terakhir (now) dan entry ~5 menit lalu (index -6 dari akhir)
     try:
-        # Kline endpoint — 1m candle, ambil 6 candle terakhir
+        url = (
+            'https://api.coingecko.com/api/v3/coins/bitcoin/market_chart'
+            '?vs_currency=usd&days=1&interval=minute'
+        )
+        resp = requests.get(url, headers=HEADERS, timeout=15)
+        if resp.status_code == 200:
+            data   = resp.json()
+            prices = data.get('prices', [])   # [[ts_ms, price], ...]
+            # Filter None dan pastikan minimal 6 data points
+            prices = [p for p in prices if p and p[1] is not None]
+            if len(prices) >= 2:
+                price_now = float(prices[-1][1])
+                price_5m  = float(prices[-6][1]) if len(prices) >= 6 else float(prices[0][1])
+                return price_now, price_5m
+        else:
+            print(f'[SPIKE] CoinGecko HTTP {resp.status_code}')
+    except Exception as e:
+        print(f'[SPIKE] CoinGecko error: {e}')
+
+    # ── FALLBACK: Binance ────────────────────────────────────────────────────
+    # Sering HTTP 451 dari GitHub Actions (geo/legal block), tapi tetap dicoba
+    try:
         url = 'https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=6'
         resp = requests.get(url, timeout=10)
-        if resp.status_code != 200:
+        if resp.status_code == 200:
+            klines = resp.json()
+            if len(klines) >= 2:
+                price_now = float(klines[-1][4])   # close candle terbaru
+                price_5m  = float(klines[0][4])    # close candle 5-6 menit lalu
+                return price_now, price_5m
+        else:
             print(f'[SPIKE] Binance HTTP {resp.status_code}')
-            return None, None
-        klines = resp.json()
-        if len(klines) < 2:
-            return None, None
-        # klines[-1] = candle terbaru, index [4] = close price
-        price_now   = float(klines[-1][4])
-        price_5m    = float(klines[0][4])   # 5-6 menit lalu
-        return price_now, price_5m
     except Exception as e:
-        print(f'[SPIKE] BTC fetch error: {e}')
-        return None, None
+        print(f'[SPIKE] Binance error: {e}')
+
+    return None, None
 
 
 
@@ -1561,7 +1704,7 @@ def fmt_spike_alert(pair, price_now, price_5m, pct_change):
         f'🕐 <b>{time_wib} WIB</b>  ({time_utc} UTC)  {date_str}\n'
         f'{DIV}\n'
         f'⚠️ <b>Cek chart & konfirmasi sebelum entry!</b>\n'
-        f'<i>Bobb Market Intelligence v2.1</i>'
+        f'<i>Bobb Market Intelligence v2.4</i>'
     )
 
 
@@ -1569,16 +1712,28 @@ def process_price_spikes(now, state):
     """
     Cek semua pair untuk spike > threshold dalam 5 menit.
     Kirim alert ke Telegram dengan cooldown 30 menit per pair.
+    v2.3 F3: Sustained filter — spike harus confirm di 2 fetch berbeda (1 run interval).
+    v2.3 F6: Weekend multiplier — threshold 3x lebih tinggi Sabtu & Minggu UTC.
     """
     print('[SPIKE] Checking price spikes...')
 
     if 'sent_spike' not in state:
         state['sent_spike'] = {}
+    if 'spike_prev' not in state:
+        state['spike_prev'] = {}
+
+    # F6: Weekend multiplier
+    is_weekend = now.weekday() >= 5  # 5=Sat, 6=Sun
+    if is_weekend:
+        print('[SPIKE] Weekend mode — threshold x3 (spread lebar, liquidity tipis)')
 
     spike_sent = 0
 
     for pair, threshold in SPIKE_THRESHOLDS.items():
         try:
+            # F6: Apply weekend multiplier
+            effective_threshold = threshold * SPIKE_WEEKEND_MULTIPLIER if is_weekend else threshold
+
             # Cooldown check
             spike_key  = f'spike_{pair}'
             last_str   = state['sent_spike'].get(spike_key, '')
@@ -1592,8 +1747,7 @@ def process_price_spikes(now, state):
                 except Exception:
                     pass
 
-            # Fetch harga — v2.1: BTC via Binance, semua forex + XAUUSD via Yahoo
-            # (exchangerate-api dihapus — cuma refresh 1x/24jam, gak cocok utk spike 5m)
+            # Fetch harga
             if pair == 'BTCUSDT':
                 price_now, price_5m = _fetch_btc_price()
             else:
@@ -1610,15 +1764,42 @@ def process_price_spikes(now, state):
             if pct is None:
                 continue
 
-            print(f'[SPIKE] {pair}: {pct:+.3f}% (threshold ±{threshold}%)')
+            weekend_tag = f' [weekend x{SPIKE_WEEKEND_MULTIPLIER}]' if is_weekend else ''
+            print(f'[SPIKE] {pair}: {pct:+.3f}% (threshold ±{effective_threshold:.2f}%{weekend_tag})')
 
-            if abs(pct) >= threshold:
+            # F3: Sustained filter — cek apakah spike ini konsisten dengan run sebelumnya
+            prev_data  = state['spike_prev'].get(pair, {})
+            prev_pct   = prev_data.get('pct', None)
+            prev_ts    = prev_data.get('ts', '')
+            is_sustained = False
+
+            if prev_pct is not None and prev_ts:
+                try:
+                    prev_dt    = datetime.datetime.fromisoformat(prev_ts)
+                    mins_since = (now - prev_dt).total_seconds() / 60
+                    # Sustained = spike masih ada dalam 3-10 menit sebelumnya & arah sama
+                    if (1 <= mins_since <= 10
+                            and abs(prev_pct) >= effective_threshold * 0.7
+                            and (prev_pct * pct) > 0):   # arah sama (keduanya + atau keduanya -)
+                        is_sustained = True
+                        print(f'[SPIKE] {pair}: sustained confirmed (prev {prev_pct:+.3f}% @ {mins_since:.0f}m ago)')
+                except Exception:
+                    pass
+
+            # Simpan data spike saat ini untuk run berikutnya (F3)
+            state['spike_prev'][pair] = {'pct': pct, 'ts': now.isoformat()}
+
+            if abs(pct) >= effective_threshold:
+                if not is_sustained:
+                    print(f'[SPIKE] {pair}: threshold hit but NOT sustained yet — waiting next run')
+                    continue
+
                 msg = fmt_spike_alert(pair, price_now, price_5m, pct)
                 r   = send_text(msg)
                 if r.get('ok'):
                     state['sent_spike'][spike_key] = now.isoformat()
                     spike_sent += 1
-                    print(f'[SPIKE] ✅ Alert sent: {pair} {pct:+.2f}%')
+                    print(f'[SPIKE] ✅ Alert sent: {pair} {pct:+.2f}% (sustained)')
                 else:
                     print(f'[SPIKE] ❌ Send failed: {r}')
 
@@ -1636,11 +1817,1028 @@ def process_price_spikes(now, state):
 
 
 # ════════════════════════════════════════
+# F1 — WEEKLY HIGH-IMPACT PREVIEW
+# ════════════════════════════════════════
+def fetch_next_week_events():
+    """Fetch events untuk minggu depan dari FF-JSON."""
+    urls = [
+        'https://nfs.faireconomy.media/ff_calendar_nextweek.json',
+        'https://nfs.faireconomy.media/ff_calendar_thisweek.json',
+    ]
+    raw = []
+    for url in urls:
+        try:
+            resp = requests.get(url, headers=HEADERS, timeout=15)
+            if resp.status_code == 200:
+                raw.extend(resp.json())
+        except Exception as e:
+            print(f'[WEEKLY] {url} error: {e}')
+
+    if not raw:
+        return []
+
+    today     = datetime.date.today()
+    # Minggu depan = Mon–Sun setelah Minggu ini
+    days_to_monday = (7 - today.weekday()) % 7 or 7
+    next_monday    = today + datetime.timedelta(days=days_to_monday)
+    next_sunday    = next_monday + datetime.timedelta(days=6)
+
+    events = []
+    for item in raw:
+        try:
+            currency   = item.get('country', '').upper()
+            impact_raw = item.get('impact', 'Low').capitalize()
+            if impact_raw not in ('High', 'Medium'):
+                continue
+            if currency not in WATCHED_CURRENCIES:
+                continue
+
+            title    = item.get('title', 'N/A')
+            date_raw = item.get('date', '')
+            if not date_raw:
+                continue
+
+            try:
+                dt_raw = datetime.datetime.fromisoformat(date_raw)
+                if dt_raw.utcoffset() is not None:
+                    dt_utc = dt_raw - dt_raw.utcoffset()
+                    dt_utc = dt_utc.replace(tzinfo=None)
+                else:
+                    dt_utc = dt_raw + datetime.timedelta(hours=_ny_to_utc_offset(dt_raw.month))
+            except Exception:
+                continue
+
+            ev_date = dt_utc.date()
+            if not (next_monday <= ev_date <= next_sunday):
+                continue
+
+            cfg = IMPACT_CONFIG.get(impact_raw, IMPACT_CONFIG['Low'])
+            dt_wib = dt_utc + datetime.timedelta(hours=7)
+            events.append({
+                'currency':     currency,
+                'title':        title,
+                'impact':       impact_raw,
+                'impact_emoji': cfg['emoji'],
+                'dt_utc':       dt_utc,
+                'dt_wib':       dt_wib,
+                'time_wib':     dt_wib.strftime('%H:%M'),
+                'day_wib':      dt_wib.strftime('%A'),
+                'date_wib':     dt_wib.strftime('%d %b'),
+                'forecast':     clean_val(item.get('forecast', '')),
+                'previous':     clean_val(item.get('previous', '')),
+            })
+        except Exception:
+            continue
+
+    events.sort(key=lambda x: x['dt_utc'])
+    return events
+
+
+def fmt_weekly_preview(events, now):
+    """Format weekly high-impact preview message."""
+    wib_now  = now + datetime.timedelta(hours=7)
+    # Cari tanggal Senin minggu depan
+    today         = wib_now.date()
+    days_to_monday = (7 - today.weekday()) % 7 or 7
+    next_monday   = today + datetime.timedelta(days=days_to_monday)
+    next_sunday   = next_monday + datetime.timedelta(days=6)
+    week_str      = f'{next_monday.strftime("%d %b")} – {next_sunday.strftime("%d %b %Y")}'
+
+    if not events:
+        return (
+            f'📆 <b>WEEKLY ECONOMIC PREVIEW</b>\n'
+            f'{DIV2}\n'
+            f'🗓 Minggu: {week_str}\n'
+            f'{DIV}\n'
+            f'✅ Tidak ada event High/Medium impact minggu depan.\n'
+            f'<i>Safe week — tidak ada major catalyst terjadwal.</i>\n'
+            f'{DIV2}\n'
+            f'<i>Bobb Market Intelligence v2.4 | {wib_now.strftime("%d %b %Y %H:%M")} WIB</i>'
+        )
+
+    high_ev   = [e for e in events if e['impact'] == 'High']
+    medium_ev = [e for e in events if e['impact'] == 'Medium']
+
+    # Kelompokkan per hari
+    days_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
+    by_day = {}
+    for e in events:
+        d = e['day_wib']
+        by_day.setdefault(d, []).append(e)
+
+    lines = ''
+    for day in days_order:
+        if day not in by_day:
+            continue
+        lines += f'\n<b>📅 {day}</b>\n'
+        for e in by_day[day]:
+            forecast = e['forecast'] if e['forecast'] else '—'
+            previous = e['previous'] if e['previous'] else '—'
+            lines += (
+                f'  {e["impact_emoji"]} <b>{e["time_wib"]} WIB</b> '
+                f'[{e["currency"]}] {e["title"]}\n'
+                f'     Prev: {previous}  |  Fcst: {forecast}\n'
+            )
+
+    # Highlight events paling penting
+    key_events = [e for e in high_ev if any(
+        k in e['title'].lower() for k in
+        ['nonfarm', 'cpi', 'gdp', 'fomc', 'rate decision', 'interest rate', 'pmi', 'retail']
+    )]
+    highlight_block = ''
+    if key_events:
+        highlights = '\n'.join(
+            f'  🎯 <b>{e["day_wib"]} {e["time_wib"]} WIB</b> — [{e["currency"]}] {e["title"]}'
+            for e in key_events[:5]
+        )
+        highlight_block = (
+            f'{DIV}\n'
+            f'⚡ <b>Key Events Minggu Ini:</b>\n'
+            f'{highlights}\n'
+        )
+
+    return (
+        f'📆 <b>WEEKLY ECONOMIC PREVIEW</b>\n'
+        f'{DIV2}\n'
+        f'🗓 Minggu: <b>{week_str}</b>\n'
+        f'{DIV}\n'
+        f'🔴 High Impact  : <b>{len(high_ev)}</b> event(s)\n'
+        f'🟡 Medium Impact: <b>{len(medium_ev)}</b> event(s)\n'
+        f'{highlight_block}'
+        f'{DIV}\n'
+        f'{lines}'
+        f'{DIV}\n'
+        f'⚠️ Tandai event HIGH impact untuk planning bias minggu ini!\n'
+        f'{DIV2}\n'
+        f'<i>Bobb Market Intelligence v2.4 | {wib_now.strftime("%d %b %Y %H:%M")} WIB</i>'
+    )
+
+
+def process_weekly_preview(now, state):
+    """
+    F1: Kirim weekly high-impact preview setiap Minggu malam 20:00 WIB (13:00 UTC).
+    Window 59 menit (13:00–13:58 UTC) toleransi GitHub Actions delay.
+    """
+    # Hanya jalan hari Minggu UTC
+    if now.weekday() != 6:  # 6 = Sunday
+        return
+
+    # Window 13:00–13:58 UTC
+    if not (now.hour == WEEKLY_PREVIEW_UTC_HOUR and now.minute < 59):
+        return
+
+    # Anti-duplikat — pakai ISO week number
+    week_key = f'weekly_{now.strftime("%Y-W%W")}'
+    if state['sent_weekly'].get(week_key):
+        print('[WEEKLY] Already sent this week, skip')
+        return
+
+    print('[WEEKLY] Fetching next week events...')
+    events = fetch_next_week_events()
+    print(f'[WEEKLY] {len(events)} High/Medium events found for next week')
+
+    msg = fmt_weekly_preview(events, now)
+    r   = send_text(msg)
+    if r.get('ok'):
+        state['sent_weekly'][week_key] = now.isoformat()
+        print('[WEEKLY] ✅ Sent')
+    else:
+        print(f'[WEEKLY] ❌ {r}')
+
+    # Cleanup: simpan 5 minggu
+    cutoff_5w = (now - datetime.timedelta(weeks=5)).isoformat()
+    state['sent_weekly'] = {
+        k: v for k, v in state['sent_weekly'].items() if v >= cutoff_5w
+    }
+
+
+# ════════════════════════════════════════
+# F2 — SESSION OPEN ALERT (London / NY Killzone)
+# ════════════════════════════════════════
+def fmt_session_open(session_name, session_cfg, events_today, now):
+    """Format session open alert message."""
+    wib_now  = now + datetime.timedelta(hours=7)
+    date_str = wib_now.strftime('%d %b %Y')
+    emoji    = session_cfg['emoji']
+
+    # Filter event yang relevan untuk session ini (dalam 3 jam ke depan)
+    upcoming = []
+    for e in events_today:
+        mins_until = (e['dt_utc'] - now).total_seconds() / 60
+        if 0 <= mins_until <= 180:
+            upcoming.append(e)
+
+    events_block = ''
+    if upcoming:
+        lines = []
+        for e in upcoming:
+            mins = int((e['dt_utc'] - now).total_seconds() / 60)
+            forecast = e['forecast'] if e['forecast'] else '—'
+            lines.append(
+                f'  {e["impact_emoji"]} <b>{e["time_wib"]} WIB</b> (~{mins}m) '
+                f'[{e["currency"]}] {e["title"]}  Fcst: {forecast}'
+            )
+        events_block = (
+            f'{DIV}\n'
+            f'📋 <b>Event dalam 3 jam ke depan:</b>\n'
+            + '\n'.join(lines) + '\n'
+        )
+    else:
+        events_block = (
+            f'{DIV}\n'
+            f'✅ Tidak ada event High/Medium dalam 3 jam ke depan.\n'
+        )
+
+    # Session-specific tips ICT
+    tips = {
+        'London': (
+            f'🎯 London Killzone: 07:00–10:00 UTC\n'
+            f'   • Sweep liquidity Asia high/low\n'
+            f'   • BOS/CHoCH konfirmasi bias\n'
+            f'   • FVG & OB fill setup'
+        ),
+        'NY': (
+            f'🎯 NY Killzone: 12:00–15:00 UTC\n'
+            f'   • Continuation atau reversal dari London\n'
+            f'   • Major news release zone\n'
+            f'   • XAUUSD & USD pairs paling volatile'
+        ),
+    }
+
+    return (
+        f'{emoji} <b>{session_name.upper()} SESSION OPEN</b>\n'
+        f'{DIV2}\n'
+        f'🕐 <b>{session_cfg["wib"]} WIB</b>  ({now.strftime("%H:%M")} UTC)  {date_str}\n'
+        f'{DIV}\n'
+        f'{tips.get(session_name, "")}\n'
+        f'{events_block}'
+        f'{DIV}\n'
+        f'⚡ <b>Killzone aktif — monitor setup entry!</b>\n'
+        f'{DIV2}\n'
+        f'<i>Bobb Market Intelligence v2.4</i>'
+    )
+
+
+def process_session_opens(now, state, events_today):
+    """
+    F2: Kirim alert saat London Open (07:00 UTC) & NY Open (12:00 UTC).
+    Window 5 menit pertama setelah jam buka. Anti-duplikat per sesi per hari.
+    """
+    # Tidak jalan weekend (market tutup)
+    if now.weekday() >= 5:  # 5=Sat, 6=Sun
+        print('[SESSION] Weekend — skip session open alert')
+        return
+
+    date_str = now.strftime('%Y-%m-%d')
+
+    for session_name, cfg in SESSION_OPENS.items():
+        # Cek apakah sekarang dalam window open (5 menit pertama)
+        if now.hour != cfg['utc_hour']:
+            continue
+        if now.minute >= SESSION_OPEN_WINDOW_MINUTES:
+            continue
+
+        session_key = f'session_{session_name}_{date_str}'
+        if state['sent_session'].get(session_key):
+            print(f'[SESSION] {session_name} already sent today, skip')
+            continue
+
+        print(f'[SESSION] {session_name} open — sending alert...')
+        msg = fmt_session_open(session_name, cfg, events_today, now)
+        r   = send_text(msg)
+        if r.get('ok'):
+            state['sent_session'][session_key] = now.isoformat()
+            print(f'[SESSION] ✅ {session_name} open alert sent')
+        else:
+            print(f'[SESSION] ❌ {r}')
+
+    # Cleanup: simpan 3 hari
+    cutoff_3d = (now - datetime.timedelta(days=3)).isoformat()
+    state['sent_session'] = {
+        k: v for k, v in state['sent_session'].items() if v >= cutoff_3d
+    }
+
+
+# ════════════════════════════════════════
+# F4 — POST-FOMC / HIGH-IMPACT CB FOLLOW-UP
+# ════════════════════════════════════════
+def _is_cb_event(event):
+    """Return True kalau event adalah Central Bank rate decision / FOMC."""
+    title_lower = event['title'].lower()
+    return any(kw in title_lower for kw in FOMC_KEYWORDS)
+
+
+def fmt_fomc_followup(event, now):
+    """Format post-FOMC follow-up message (60 menit setelah rilis)."""
+    wib_now  = now + datetime.timedelta(hours=7)
+    time_wib = wib_now.strftime('%H:%M')
+    date_str = wib_now.strftime('%d %b %Y')
+
+    actual   = event['actual']   if event['actual']   else '—'
+    forecast = event['forecast'] if event['forecast'] else '—'
+    previous = event['previous'] if event['previous'] else '—'
+
+    # Re-assess beat/miss
+    sent_key, sent_label, sent_emoji, deviation, _ = _calc_beat_miss(
+        actual, forecast, event['title']
+    )
+    direction_sent = (
+        'better' if sent_key in ('beat', 'strong_beat')
+        else 'worse' if sent_key in ('miss', 'strong_miss')
+        else 'inline'
+    )
+
+    # Direction predictions
+    direction_block = ''
+    if direction_sent != 'inline':
+        predictions = _predict_pair_directions(event['currency'], direction_sent, event['title'])
+        if predictions:
+            lines = [
+                f'  {p["conf_emoji"]} {p["arrow"]} <b>{p["pair"]}</b>  <i>({p["confidence"]})</i>'
+                for p in predictions
+            ]
+            direction_block = (
+                f'{DIV}\n'
+                f'🧭 <b>Arah Pair Sekarang (60m post-release):</b>\n'
+                + '\n'.join(lines) + '\n'
+            )
+
+    return (
+        f'🔔 <b>POST-RELEASE FOLLOW-UP</b>\n'
+        f'{DIV2}\n'
+        f'{event["impact_emoji"]} <b>[{event["currency"]}] {event["title"]}</b>\n'
+        f'{DIV}\n'
+        f'✅ Actual   : <b>{actual}</b>\n'
+        f'🎯 Forecast : {forecast}\n'
+        f'📈 Previous : {previous}\n'
+        f'{DIV}\n'
+        f'{sent_emoji} <b>{sent_label}</b>\n'
+        f'{direction_block}'
+        f'{DIV}\n'
+        f'⏱ <b>60 menit setelah rilis</b> — debu mereda, konfirmasi bias.\n'
+        f'🕐 {time_wib} WIB  ({now.strftime("%H:%M")} UTC)  {date_str}\n'
+        f'{DIV2}\n'
+        f'<i>Bobb Market Intelligence v2.4</i>'
+    )
+
+
+def process_fomc_followup(now, state, events):
+    """
+    F4: Kirim follow-up 60 menit setelah event Central Bank / FOMC rilis.
+    Hanya untuk event dengan actual data dan termasuk FOMC_KEYWORDS.
+    """
+    for event in events:
+        if not _is_cb_event(event):
+            continue
+        if not event['actual']:
+            continue
+
+        mins_past   = (now - event['dt_utc']).total_seconds() / 60
+        followup_key = f'followup_{event["id"]}'
+
+        # Window: 55–75 menit setelah rilis (toleransi GitHub Actions delay)
+        if not (55 <= mins_past <= 75):
+            continue
+        if state['sent_fomc_followup'].get(followup_key):
+            continue
+
+        print(f'[FOMC] Follow-up: {event["currency"]} {event["title"]}')
+        msg = fmt_fomc_followup(event, now)
+        r   = send_text(msg)
+        if r.get('ok'):
+            state['sent_fomc_followup'][followup_key] = now.isoformat()
+            print('[FOMC] ✅ Follow-up sent')
+        else:
+            print(f'[FOMC] ❌ {r}')
+
+    # Cleanup: 2 hari
+    cutoff_2d = (now - datetime.timedelta(days=2)).isoformat()
+    state['sent_fomc_followup'] = {
+        k: v for k, v in state['sent_fomc_followup'].items() if v >= cutoff_2d
+    }
+
+
+# ════════════════════════════════════════
+# F5 — DAILY BIAS SUMMARY
+# ════════════════════════════════════════
+def _build_daily_bias(events):
+    """
+    F5: Analisis bias USD dan XAU berdasarkan event High impact hari ini.
+    Returns string block untuk disisipkan ke daily briefing.
+    """
+    high_events = [e for e in events if e['impact'] == 'High']
+    if not high_events:
+        return ''
+
+    usd_signals = []
+    xau_signals = []
+
+    for e in high_events:
+        title_lower = e['title'].lower()
+        forecast    = e['forecast']
+        previous    = e['previous']
+        currency    = e['currency']
+
+        # Hanya bisa build bias kalau ada previous data
+        if not previous:
+            continue
+
+        # Parse previous sebagai angka untuk estimasi arah
+        try:
+            prev_val = float(re.sub(r'[^0-9.\-]', '', previous))
+        except Exception:
+            prev_val = None
+
+        # ── USD signals ────────────────────────────────────────────
+        if currency == 'USD':
+            label = None
+            if any(k in title_lower for k in ['nonfarm', 'payroll', 'employment']):
+                label = 'NFP'
+            elif 'cpi' in title_lower or 'inflation' in title_lower:
+                label = 'CPI'
+            elif 'gdp' in title_lower:
+                label = 'GDP'
+            elif any(k in title_lower for k in ['rate', 'fomc']):
+                label = 'Rate Decision'
+            elif 'pmi' in title_lower:
+                label = 'PMI'
+            elif 'retail' in title_lower:
+                label = 'Retail Sales'
+            if label:
+                prev_str = f'Prev: {previous}' if previous else ''
+                fcst_str = f'Fcst: {forecast}' if forecast else ''
+                usd_signals.append(f'{label} ({prev_str}{" | " if prev_str and fcst_str else ""}{fcst_str})')
+
+        # ── XAU signals ────────────────────────────────────────────
+        # XAU naik saat: USD lemah, risk-off, inflasi tinggi, NFP miss
+        if currency == 'USD':
+            if any(k in title_lower for k in ['nonfarm', 'payroll']):
+                xau_signals.append('NFP (USD event) — jika miss → XAUUSD ↑')
+            elif 'cpi' in title_lower:
+                xau_signals.append('CPI — inflasi tinggi = XAUUSD ↑ jangka panjang')
+
+    if not usd_signals and not xau_signals:
+        return ''
+
+    lines = []
+    if usd_signals:
+        lines.append(f'💵 <b>USD Watch:</b> {" | ".join(usd_signals)}')
+    if xau_signals:
+        lines.append(f'🥇 <b>XAU Watch:</b> {xau_signals[0]}')
+
+    return (
+        f'{DIV}\n'
+        f'🧭 <b>Daily Bias Watch:</b>\n'
+        + '\n'.join(f'   {l}' for l in lines) + '\n'
+    )
+
+
+# ════════════════════════════════════════
+# F6 — WEEKEND SPIKE SUPPRESSOR (integrated into process_price_spikes)
+# ════════════════════════════════════════
+# Logic diintegrasikan langsung ke process_price_spikes via SPIKE_WEEKEND_MULTIPLIER.
+# Weekend = now.weekday() >= 5 (Sat=5, Sun=6) UTC.
+
+
+# ════════════════════════════════════════
+# F7 — NO-TRADE ZONE ALERT
+# ════════════════════════════════════════
+def process_no_trade_zones(now, state, events):
+    """
+    F7: Kirim alert ⛔ NO-TRADE ZONE untuk setiap High impact event.
+    Window: NO_TRADE_BEFORE_MINS sebelum sampai NO_TRADE_AFTER_MINS sesudah event.
+    Anti-duplikat via sent_notrade[zone_key]. Tidak overlap dengan reminder (reminder = 30m).
+    """
+    for event in events:
+        if event['impact'] != 'High':
+            continue
+
+        mins_until = (event['dt_utc'] - now).total_seconds() / 60
+        mins_past  = (now - event['dt_utc']).total_seconds() / 60
+
+        in_before_zone = (0 < mins_until <= NO_TRADE_BEFORE_MINS)
+        in_after_zone  = (0 < mins_past  <= NO_TRADE_AFTER_MINS)
+
+        if not (in_before_zone or in_after_zone):
+            continue
+
+        zone_key = f'notrade_{event["id"]}_{"before" if in_before_zone else "after"}'
+        if state['sent_notrade'].get(zone_key):
+            continue
+
+        phase     = 'SEBELUM' if in_before_zone else 'SETELAH'
+        mins_ref  = int(mins_until) if in_before_zone else int(mins_past)
+        pairs_str = ', '.join(event['affected_pairs'][:4])
+        forecast  = event['forecast'] if event['forecast'] else '—'
+
+        msg = (
+            f'⛔ <b>NO-TRADE ZONE AKTIF</b>\n'
+            f'{DIV2}\n'
+            f'{event["impact_emoji"]} <b>[{event["currency"]}] {event["title"]}</b>\n'
+            f'{DIV}\n'
+            f'📍 Zone  : <b>{phase} event</b> ({mins_ref}m {"lagi" if in_before_zone else "yang lalu"})\n'
+            f'🕐 Event : <b>{event["time_wib"]} WIB</b>  ({event["time_utc"]} UTC)\n'
+            f'🎯 Fcst  : {forecast}\n'
+            f'{DIV}\n'
+            f'💱 Pairs terdampak: <i>{pairs_str}</i>\n'
+            f'{DIV}\n'
+            f'🚫 <b>Hindari entry baru!</b>\n'
+            f'   • Spread bisa melebar tiba-tiba\n'
+            f'   • Stop hunt sebelum rilis umum terjadi\n'
+            f'   • Tunggu konfirmasi setelah candle close\n'
+            f'{DIV2}\n'
+            f'<i>Bobb Market Intelligence v2.4</i>'
+        )
+
+        r = send_text(msg)
+        if r.get('ok'):
+            state['sent_notrade'][zone_key] = now.isoformat()
+            print(f'[NOTRADE] ✅ {phase} zone sent: {event["currency"]} {event["title"]}')
+        else:
+            print(f'[NOTRADE] ❌ {r}')
+
+    # Cleanup: 1 hari
+    cutoff_1d = (now - datetime.timedelta(days=1)).isoformat()
+    state['sent_notrade'] = {
+        k: v for k, v in state['sent_notrade'].items() if v >= cutoff_1d
+    }
+
+
+# ════════════════════════════════════════
+# F8 — EVENT CLUSTER WARNING
+# ════════════════════════════════════════
+def process_event_cluster(now, state, events):
+    """
+    F8: Kirim warning kalau ada ≥ CLUSTER_MIN_EVENTS High impact dalam CLUSTER_WINDOW_MINS ke depan.
+    Anti-duplikat: satu cluster warning per window per hari.
+    """
+    upcoming_high = [
+        e for e in events
+        if e['impact'] == 'High'
+        and 0 < (e['dt_utc'] - now).total_seconds() / 60 <= CLUSTER_WINDOW_MINS
+    ]
+
+    if len(upcoming_high) < CLUSTER_MIN_EVENTS:
+        return
+
+    # Key: date + hour window — cegah spam tiap run
+    cluster_key = f'cluster_{now.strftime("%Y-%m-%d_%H")}'
+    if state['sent_cluster'].get(cluster_key):
+        print(f'[CLUSTER] Already sent this hour, skip')
+        return
+
+    # Sort by time
+    upcoming_high.sort(key=lambda x: x['dt_utc'])
+
+    event_lines = '\n'.join(
+        f'  {e["impact_emoji"]} <b>{e["time_wib"]} WIB</b> [{e["currency"]}] {e["title"]}'
+        for e in upcoming_high[:6]
+    )
+
+    # Collect semua pairs unik yang terdampak
+    all_pairs = []
+    for e in upcoming_high:
+        for p in e['affected_pairs']:
+            if p not in all_pairs:
+                all_pairs.append(p)
+    pairs_str = ' | '.join(all_pairs[:6])
+
+    first_event_mins = int((upcoming_high[0]['dt_utc'] - now).total_seconds() / 60)
+
+    msg = (
+        f'⚠️ <b>EVENT CLUSTER WARNING</b>\n'
+        f'{DIV2}\n'
+        f'🚨 <b>{len(upcoming_high)} High Impact Events</b> dalam {CLUSTER_WINDOW_MINS} menit!\n'
+        f'{DIV}\n'
+        f'{event_lines}\n'
+        f'{DIV}\n'
+        f'⏱ Event pertama dalam: <b>~{first_event_mins} menit</b>\n'
+        f'💱 Pairs terdampak: <i>{pairs_str}</i>\n'
+        f'{DIV}\n'
+        f'⚡ <b>Rekomendasi:</b>\n'
+        f'   • Pertimbangkan untuk tidak masuk posisi baru\n'
+        f'   • Tutup posisi terbuka jika profit sudah ada\n'
+        f'   • Extreme volatility sangat mungkin terjadi\n'
+        f'   • Tunggu market settle setelah semua event lewat\n'
+        f'{DIV2}\n'
+        f'<i>Bobb Market Intelligence v2.4</i>'
+    )
+
+    r = send_text(msg)
+    if r.get('ok'):
+        state['sent_cluster'][cluster_key] = now.isoformat()
+        print(f'[CLUSTER] ✅ Warning sent: {len(upcoming_high)} events in {CLUSTER_WINDOW_MINS}m')
+    else:
+        print(f'[CLUSTER] ❌ {r}')
+
+    # Cleanup: 2 hari
+    cutoff_2d = (now - datetime.timedelta(days=2)).isoformat()
+    state['sent_cluster'] = {
+        k: v for k, v in state['sent_cluster'].items() if v >= cutoff_2d
+    }
+
+
+# ════════════════════════════════════════
+# F9 — ECONOMIC SURPRISE INDEX
+# ════════════════════════════════════════
+def update_surprise_index(state, event, sent_key):
+    """
+    F9: Update streak beat/miss per currency setiap actual result masuk.
+    state['surprise_index'][currency] = {
+        'streak': int,       # positif = beat streak, negatif = miss streak
+        'direction': str,    # 'beat' | 'miss' | 'inline'
+        'last_event': str,
+        'last_ts': str,
+    }
+    Returns (streak_count, direction, should_alert) tuple.
+    """
+    if not event['actual'] or not event['forecast']:
+        return 0, 'inline', False
+
+    sent_key_surp = f'surprise_{sent_key}'
+    if state.get('sent_surprise', {}).get(sent_key_surp):
+        return 0, 'inline', False
+
+    sent_key_miss, sent_label, _, _, _ = _calc_beat_miss(
+        event['actual'], event['forecast'], event['title']
+    )
+
+    direction = (
+        'beat'   if sent_key_miss in ('beat', 'strong_beat')
+        else 'miss' if sent_key_miss in ('miss', 'strong_miss')
+        else 'inline'
+    )
+
+    if direction == 'inline':
+        return 0, 'inline', False
+
+    currency = event['currency']
+    idx      = state.get('surprise_index', {})
+    curr_data = idx.get(currency, {'streak': 0, 'direction': 'inline', 'last_event': '', 'last_ts': ''})
+
+    prev_direction = curr_data.get('direction', 'inline')
+    prev_streak    = curr_data.get('streak', 0)
+
+    # Update streak
+    if direction == prev_direction:
+        new_streak = (abs(prev_streak) + 1) * (1 if direction == 'beat' else -1)
+    else:
+        new_streak = 1 if direction == 'beat' else -1
+
+    idx[currency] = {
+        'streak':     new_streak,
+        'direction':  direction,
+        'last_event': event['title'],
+        'last_ts':    datetime.datetime.utcnow().isoformat(),
+    }
+    state['surprise_index'] = idx
+
+    should_alert = abs(new_streak) >= SURPRISE_STREAK_ALERT
+    return abs(new_streak), direction, should_alert
+
+
+def fmt_surprise_alert(currency, streak, direction, last_event, now):
+    """Format Economic Surprise Index alert."""
+    wib_now    = now + datetime.timedelta(hours=7)
+    streak_str = '🔥' * min(streak, 5)
+    dir_emoji  = '✅' if direction == 'beat' else '❌'
+    dir_label  = 'BEAT' if direction == 'beat' else 'MISS'
+    bias_label = 'HAWKISH / BULLISH' if direction == 'beat' else 'DOVISH / BEARISH'
+
+    # Impact pairs untuk currency ini
+    affected = CURRENCY_PAIRS.get(currency, [currency])
+    pairs_str = ' | '.join(affected[:5])
+
+    # XAU special note
+    xau_note = ''
+    if currency == 'USD':
+        xau_note = (
+            f'\n🥇 XAUUSD: {"↓ bearish pressure (USD strong)" if direction == "beat" else "↑ bullish pressure (USD weak)"}'
+        )
+
+    return (
+        f'📊 <b>ECONOMIC SURPRISE INDEX</b>\n'
+        f'{DIV2}\n'
+        f'{dir_emoji} <b>{currency}: {streak}x {dir_label} STREAK</b> {streak_str}\n'
+        f'{DIV}\n'
+        f'📌 Last Event  : {last_event}\n'
+        f'📈 Bias Macro  : <b>{bias_label}</b>\n'
+        f'💱 Pairs Watch : <i>{pairs_str}</i>\n'
+        f'{xau_note}\n'
+        f'{DIV}\n'
+        f'🧭 <b>Implikasi:</b>\n'
+        f'   • {streak} data berturut-turut {dir_label} forecast\n'
+        f'   • Pasar kemungkinan besar sudah price-in momentum ini\n'
+        f'   • {"Perhatikan hawkish repricing di " + currency + " pairs" if direction == "beat" else "Dovish pressure — watch for " + currency + " weakness"}\n'
+        f'{DIV2}\n'
+        f'🕐 {wib_now.strftime("%H:%M")} WIB  |  <i>Bobb Market Intelligence v2.4</i>'
+    )
+
+
+def process_surprise_index(now, state, events):
+    """
+    F9: Check and send Economic Surprise Index alert setelah actual result masuk.
+    Dipanggil setelah loop actual result — memanfaatkan event yang baru saja diproses.
+    """
+    for event in events:
+        if not event['actual']:
+            continue
+        mins_past  = (now - event['dt_utc']).total_seconds() / 60
+        if not (5 <= mins_past <= 45):
+            continue
+
+        actual_key = f'actual_{event["id"]}'
+        streak, direction, should_alert = update_surprise_index(state, event, actual_key)
+
+        if not should_alert:
+            continue
+
+        # Anti-duplikat alert per currency per hari
+        surp_alert_key = f'surpalert_{event["currency"]}_{now.strftime("%Y-%m-%d")}'
+        if state.get('sent_surprise', {}).get(surp_alert_key):
+            continue
+
+        idx_data   = state.get('surprise_index', {}).get(event['currency'], {})
+        last_event = idx_data.get('last_event', event['title'])
+
+        msg = fmt_surprise_alert(event['currency'], streak, direction, last_event, now)
+        r   = send_text(msg)
+        if r.get('ok'):
+            if 'sent_surprise' not in state:
+                state['sent_surprise'] = {}
+            state['sent_surprise'][surp_alert_key] = now.isoformat()
+            print(f'[SURPRISE] ✅ {event["currency"]} {streak}x {direction} streak alert sent')
+        else:
+            print(f'[SURPRISE] ❌ {r}')
+
+    # Cleanup sent_surprise: 2 hari
+    cutoff_2d = (now - datetime.timedelta(days=2)).isoformat()
+    state['sent_surprise'] = {
+        k: v for k, v in state.get('sent_surprise', {}).items() if v >= cutoff_2d
+    }
+    # Cleanup surprise_index: hapus entry > 14 hari
+    cutoff_14d = (now - datetime.timedelta(days=14)).isoformat()
+    state['surprise_index'] = {
+        k: v for k, v in state.get('surprise_index', {}).items()
+        if isinstance(v, dict) and v.get('last_ts', '') >= cutoff_14d
+    }
+
+
+# ════════════════════════════════════════
+# F10 — ASIA SESSION OPEN ALERT
+# ════════════════════════════════════════
+def process_asia_session_open(now, state, events):
+    """
+    F10: Kirim alert Asia Session Open (Tokyo) — 02:00 UTC / 09:00 WIB.
+    Window 5 menit pertama. Skip weekend. Tambahan: recap overnight events
+    (event yang rilis 0–6 jam sebelumnya).
+    """
+    if now.weekday() >= 5:
+        return
+
+    if not (now.hour == ASIA_SESSION_UTC_HOUR and now.minute < SESSION_OPEN_WINDOW_MINUTES):
+        return
+
+    date_str    = now.strftime('%Y-%m-%d')
+    session_key = f'session_Asia_{date_str}'
+    if state['sent_session'].get(session_key):
+        print('[SESSION] Asia already sent today, skip')
+        return
+
+    # Overnight events: rilis dalam 6 jam terakhir (NY close → Asia open)
+    overnight = []
+    for e in events:
+        mins_past = (now - e['dt_utc']).total_seconds() / 60
+        if 0 < mins_past <= 360 and e['actual']:
+            overnight.append(e)
+
+    # Upcoming Asia events hari ini: dalam 6 jam ke depan
+    upcoming = [
+        e for e in events
+        if 0 < (e['dt_utc'] - now).total_seconds() / 60 <= 360
+    ]
+
+    overnight_block = ''
+    if overnight:
+        lines = []
+        for e in overnight:
+            sent_key_miss, sent_label, sent_emoji, _, _ = _calc_beat_miss(
+                e['actual'], e['forecast'], e['title']
+            )
+            lines.append(
+                f'  {sent_emoji} [{e["currency"]}] {e["title"]}: '
+                f'<b>{e["actual"]}</b> (Fcst: {e["forecast"] or "—"})'
+            )
+        overnight_block = (
+            f'{DIV}\n'
+            f'🌙 <b>Overnight Events (recap):</b>\n'
+            + '\n'.join(lines) + '\n'
+        )
+
+    upcoming_block = ''
+    if upcoming:
+        lines = [
+            f'  {e["impact_emoji"]} <b>{e["time_wib"]} WIB</b> [{e["currency"]}] {e["title"]}'
+            for e in upcoming[:4]
+        ]
+        upcoming_block = (
+            f'{DIV}\n'
+            f'📋 <b>Event Asia Session hari ini:</b>\n'
+            + '\n'.join(lines) + '\n'
+        )
+    else:
+        upcoming_block = f'{DIV}\n✅ Tidak ada High/Medium event dalam 6 jam ke depan.\n'
+
+    wib_now = now + datetime.timedelta(hours=7)
+    msg = (
+        f'🇯🇵 <b>ASIA SESSION OPEN</b>\n'
+        f'{DIV2}\n'
+        f'🕐 <b>{ASIA_SESSION_WIB} WIB</b>  (02:00 UTC)  {wib_now.strftime("%d %b %Y")}\n'
+        f'{DIV}\n'
+        f'🎯 Tokyo Killzone: 02:00–05:00 UTC\n'
+        f'   • USDJPY & AUDUSD paling aktif\n'
+        f'   • XAUUSD sering setup sebelum London open\n'
+        f'   • Liquidity tipis — hati-hati fake breakout\n'
+        f'{overnight_block}'
+        f'{upcoming_block}'
+        f'{DIV}\n'
+        f'⚡ <b>Asia open — monitor setup USDJPY & XAUUSD!</b>\n'
+        f'{DIV2}\n'
+        f'<i>Bobb Market Intelligence v2.4</i>'
+    )
+
+    r = send_text(msg)
+    if r.get('ok'):
+        state['sent_session'][session_key] = now.isoformat()
+        print('[SESSION] ✅ Asia open alert sent')
+    else:
+        print(f'[SESSION] ❌ Asia open: {r}')
+
+
+# ════════════════════════════════════════
+# F11 — DAILY CLOSE SUMMARY
+# ════════════════════════════════════════
+def _record_actual_for_close(state, event, now):
+    """F11: Catat actual result ke daily_actuals untuk dipakai close summary."""
+    date_key = now.strftime('%Y-%m-%d')
+    if 'daily_actuals' not in state:
+        state['daily_actuals'] = {}
+    if date_key not in state['daily_actuals']:
+        state['daily_actuals'][date_key] = []
+
+    # Hindari duplikat
+    existing_ids = [a.get('id') for a in state['daily_actuals'][date_key]]
+    if event['id'] in existing_ids:
+        return
+
+    sent_key_miss, sent_label, sent_emoji, deviation, _ = _calc_beat_miss(
+        event['actual'], event['forecast'], event['title']
+    )
+    state['daily_actuals'][date_key].append({
+        'id':         event['id'],
+        'currency':   event['currency'],
+        'title':      event['title'],
+        'actual':     event['actual'],
+        'forecast':   event['forecast'],
+        'impact':     event['impact'],
+        'sent_key':   sent_key_miss,
+        'sent_emoji': sent_emoji,
+        'deviation':  deviation,
+        'time_wib':   event['time_wib'],
+    })
+
+
+def _record_spike_for_close(state, pair, pct, now):
+    """F11: Catat spike yang terjadi untuk daily close summary."""
+    date_key = now.strftime('%Y-%m-%d')
+    if 'daily_spikes' not in state:
+        state['daily_spikes'] = {}
+    if date_key not in state['daily_spikes']:
+        state['daily_spikes'][date_key] = []
+
+    state['daily_spikes'][date_key].append({
+        'pair': pair,
+        'pct':  pct,
+        'ts':   now.strftime('%H:%M'),
+    })
+
+
+def fmt_daily_close(actuals, spikes, now):
+    """Format daily close summary message."""
+    wib_now  = now + datetime.timedelta(hours=7)
+    date_str = wib_now.strftime('%A, %d %b %Y')
+
+    # Beat/miss tally
+    beats  = [a for a in actuals if a['sent_key'] in ('beat', 'strong_beat')]
+    misses = [a for a in actuals if a['sent_key'] in ('miss', 'strong_miss')]
+    inline = [a for a in actuals if a['sent_key'] == 'inline']
+
+    actuals_block = ''
+    if actuals:
+        lines = [
+            f'  {a["sent_emoji"]} <b>{a["time_wib"]}</b> [{a["currency"]}] {a["title"]}: '
+            f'<b>{a["actual"]}</b>'
+            for a in actuals[:8]
+        ]
+        actuals_block = (
+            f'{DIV}\n'
+            f'📋 <b>Events Hari Ini:</b>\n'
+            + '\n'.join(lines) + '\n'
+            f'\n  ✅ Beat: {len(beats)}  ❌ Miss: {len(misses)}  🟡 Inline: {len(inline)}\n'
+        )
+    else:
+        actuals_block = f'{DIV}\n📋 Tidak ada event yang rilis hari ini.\n'
+
+    # USD bias hari ini dari beats/misses
+    usd_beats  = [a for a in beats  if a['currency'] == 'USD']
+    usd_misses = [a for a in misses if a['currency'] == 'USD']
+    if len(usd_beats) > len(usd_misses):
+        usd_bias = f'💪 USD: <b>STRONG</b> ({len(usd_beats)}x beat) → XAUUSD bearish pressure'
+    elif len(usd_misses) > len(usd_beats):
+        usd_bias = f'📉 USD: <b>WEAK</b> ({len(usd_misses)}x miss) → XAUUSD bullish pressure'
+    else:
+        usd_bias = '⚖️ USD: <b>NEUTRAL</b> (beat/miss seimbang)'
+
+    # Top spike hari ini
+    spike_block = ''
+    if spikes:
+        top_spikes = sorted(spikes, key=lambda x: abs(x['pct']), reverse=True)[:3]
+        lines = [
+            f'  ⚡ <b>{s["pair"]}</b>: {s["pct"]:+.2f}%  @ {s["ts"]} WIB'
+            for s in top_spikes
+        ]
+        spike_block = (
+            f'{DIV}\n'
+            f'⚡ <b>Biggest Moves Hari Ini:</b>\n'
+            + '\n'.join(lines) + '\n'
+        )
+
+    return (
+        f'🌙 <b>DAILY CLOSE SUMMARY</b>\n'
+        f'{DIV2}\n'
+        f'📆 {date_str}\n'
+        f'🕐 NY Close — {wib_now.strftime("%H:%M")} WIB (21:00 UTC)\n'
+        f'{actuals_block}'
+        f'{DIV}\n'
+        f'📊 <b>USD Direction Hari Ini:</b>\n'
+        f'   {usd_bias}\n'
+        f'{spike_block}'
+        f'{DIV}\n'
+        f'💤 <b>Persiapan esok hari:</b>\n'
+        f'   • Cek kalender untuk event besok\n'
+        f'   • Update bias D1 sebelum Asia open\n'
+        f'   • Review entry yang missed hari ini\n'
+        f'{DIV2}\n'
+        f'<i>Bobb Market Intelligence v2.4</i>'
+    )
+
+
+def process_daily_close(now, state):
+    """
+    F11: Kirim daily close summary saat NY close — 21:00 UTC / 04:00 WIB.
+    Window 21:00–21:58 UTC. Anti-duplikat via sent_close[date_key].
+    """
+    if not (now.hour == DAILY_CLOSE_UTC_HOUR and now.minute < 59):
+        return
+
+    date_key = now.strftime('%Y-%m-%d')
+    if state['sent_close'].get(date_key):
+        print('[CLOSE] Already sent today, skip')
+        return
+
+    actuals = state.get('daily_actuals', {}).get(date_key, [])
+    spikes  = state.get('daily_spikes',  {}).get(date_key, [])
+
+    print(f'[CLOSE] Sending daily close: {len(actuals)} actuals, {len(spikes)} spikes')
+    msg = fmt_daily_close(actuals, spikes, now)
+    r   = send_text(msg)
+    if r.get('ok'):
+        state['sent_close'][date_key] = now.isoformat()
+        print('[CLOSE] ✅ Daily close sent')
+    else:
+        print(f'[CLOSE] ❌ {r}')
+
+    # Cleanup: simpan 3 hari
+    cutoff_3d = (now - datetime.timedelta(days=3)).isoformat()
+    state['sent_close'] = {
+        k: v for k, v in state['sent_close'].items() if v >= cutoff_3d
+    }
+    # Cleanup daily_actuals & daily_spikes: simpan 3 hari
+    cutoff_date_3d = (now - datetime.timedelta(days=3)).strftime('%Y-%m-%d')
+    state['daily_actuals'] = {
+        k: v for k, v in state.get('daily_actuals', {}).items() if k >= cutoff_date_3d
+    }
+    state['daily_spikes'] = {
+        k: v for k, v in state.get('daily_spikes', {}).items() if k >= cutoff_date_3d
+    }
+
+
+# ════════════════════════════════════════
 def run_news_detector():
     now   = datetime.datetime.utcnow()
     state = load_state()
 
-    print(f'=== BOBB MARKET INTELLIGENCE v2.1 ===')
+    print(f'=== BOBB MARKET INTELLIGENCE v2.4 ===')
     print(f'Time UTC : {now.strftime("%Y-%m-%d %H:%M")}')
     print(f'Time WIB : {(now + datetime.timedelta(hours=7)).strftime("%Y-%m-%d %H:%M")}')
 
@@ -1649,8 +2847,6 @@ def run_news_detector():
     print(f'[FETCH] Source used: {source}')
 
     # ── MODE 1: Daily Briefing — 07:00 WIB = 00:00 UTC ──────────────
-    # Window 59 menit (00:00–00:58 UTC) — toleransi GitHub Actions scheduler delay
-    # Anti-duplikat dijaga sent_daily[date_key] — aman dari double-send
     is_briefing = (now.hour == 0 and now.minute < 59)
     date_key    = now.strftime('%Y-%m-%d')
 
@@ -1659,7 +2855,8 @@ def run_news_detector():
         if source == 'None':
             msg = fmt_all_sources_failed(now)
         else:
-            msg = fmt_daily_briefing(events, now, source)
+            bias_block = _build_daily_bias(events)
+            msg = fmt_daily_briefing(events, now, source, bias_block)
         r = send_text(msg)
         if r.get('ok'):
             state['sent_daily'][date_key] = True
@@ -1668,8 +2865,6 @@ def run_news_detector():
             print(f'[DAILY] ❌ {r}')
 
     # ── MODE 2: Reminder 30 menit sebelum ───────────────────────────
-    # Window 15–45 menit — toleransi GitHub Actions delay hingga 15 menit
-    # Anti-duplikat dijaga sent_reminder[reminder_key]
     for event in events:
         mins_until   = (event['dt_utc'] - now).total_seconds() / 60
         reminder_key = f'reminder_{event["id"]}'
@@ -1681,9 +2876,6 @@ def run_news_detector():
                 print('[REMINDER] ✅ Sent')
 
     # ── MODE 3: Actual Result setelah rilis ─────────────────────────
-    # Window 5–45 menit — toleransi GitHub Actions delay hingga 20 menit
-    # v2.1: cross-check investing.com dihapus (rawan blocked Cloudflare) —
-    # actual murni dari FF-JSON/FF-HTML/MyFxBook, skip kalau masih kosong
     for event in events:
         mins_past  = (now - event['dt_utc']).total_seconds() / 60
         actual_key = f'actual_{event["id"]}'
@@ -1691,9 +2883,8 @@ def run_news_detector():
             continue
         if state['sent_actual'].get(actual_key, False):
             continue
-
         if not event['actual']:
-            print(f'[ACTUAL] Skip — actual masih kosong utk {event["currency"]} {event["title"]}')
+            print(f'[ACTUAL] Skip — actual masih kosong: {event["currency"]} {event["title"]}')
             continue
 
         print(f'[ACTUAL] {event["currency"]} {event["title"]} → {event["actual"]}')
@@ -1701,6 +2892,8 @@ def run_news_detector():
         if r.get('ok'):
             state['sent_actual'][actual_key] = now.isoformat()
             print('[ACTUAL] ✅ Sent')
+            # F11: Catat ke daily actuals
+            _record_actual_for_close(state, event, now)
 
     # ── MODE 4: Breaking News ────────────────────────────────────────
     process_breaking_news(now, state)
@@ -1708,24 +2901,48 @@ def run_news_detector():
     # ── MODE 5: Price Spike Detector ────────────────────────────────
     process_price_spikes(now, state)
 
+    # ── MODE 6 (F1): Weekly Preview — Minggu 13:00 UTC ──────────────
+    process_weekly_preview(now, state)
+
+    # ── MODE 7 (F2): Session Open Alert — London & NY ───────────────
+    process_session_opens(now, state, events)
+
+    # ── MODE 8 (F4): Post-FOMC Follow-up — 60m setelah CB event ─────
+    process_fomc_followup(now, state, events)
+
+    # ── MODE 9 (F7): No-Trade Zone Alert ────────────────────────────
+    process_no_trade_zones(now, state, events)
+
+    # ── MODE 10 (F8): Event Cluster Warning ─────────────────────────
+    process_event_cluster(now, state, events)
+
+    # ── MODE 11 (F9): Economic Surprise Index ───────────────────────
+    process_surprise_index(now, state, events)
+
+    # ── MODE 12 (F10): Asia Session Open — 02:00 UTC ────────────────
+    process_asia_session_open(now, state, events)
+
+    # ── MODE 13 (F11): Daily Close Summary — 21:00 UTC ──────────────
+    process_daily_close(now, state)
+
     # ── Cleanup state ────────────────────────────────────────────────
-    # sent_daily: simpan 7 hari
     cutoff_7d = (now - datetime.timedelta(days=7)).strftime('%Y-%m-%d')
     state['sent_daily'] = {k: v for k, v in state['sent_daily'].items() if k >= cutoff_7d}
 
-    # sent_reminder & sent_actual: simpan 2 hari — event ID mengandung tanggal implisit
-    # key format: "reminder_USD_CPI_1230" — cukup 2 hari untuk safety margin
     cutoff_2d = (now - datetime.timedelta(days=2)).isoformat()
-    # Simpan kalau timestamp value-nya masih dalam 2 hari (nilai True = old format, hapus saja)
     state['sent_reminder'] = {
         k: v for k, v in state['sent_reminder'].items()
-        if v is not True  # hapus format lama (boolean True)
-        and isinstance(v, str) and v >= cutoff_2d
+        if v is not True and isinstance(v, str) and v >= cutoff_2d
     }
     state['sent_actual'] = {
         k: v for k, v in state['sent_actual'].items()
-        if v is not True
-        and isinstance(v, str) and v >= cutoff_2d
+        if v is not True and isinstance(v, str) and v >= cutoff_2d
+    }
+    # spike_prev: simpan 10 menit saja
+    cutoff_10m = (now - datetime.timedelta(minutes=10)).isoformat()
+    state['spike_prev'] = {
+        k: v for k, v in state.get('spike_prev', {}).items()
+        if isinstance(v, dict) and v.get('ts', '') >= cutoff_10m
     }
 
     save_state(state)
