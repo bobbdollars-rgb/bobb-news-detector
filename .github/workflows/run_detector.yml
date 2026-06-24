@@ -1,11 +1,11 @@
-name: Bobb Market Intelligence v2.1
+name: Bobb Market Intelligence v2.4
 
 on:
   schedule:
     # Tiap 15 menit — balance antara responsiveness & free tier quota
     # GitHub Actions free tier: 2000 menit/bulan
     # 15 menit → 2880 run/bulan × ~1 menit eksekusi = ~2880 menit → aman di free tier
-    # Window reminder (15–45m) & actual (5–45m) sudah di-design untuk toleransi 15 menit
+    # Window reminder (15-45m) & actual (5-45m) sudah di-design untuk toleransi 15 menit
     - cron: '*/15 * * * *'
 
   # Manual trigger — buat testing
@@ -14,11 +14,12 @@ on:
 jobs:
   run-detector:
     runs-on: ubuntu-latest
-    # v2.1: naik dari 4→6 menit. Worst-case semua network call timeout
-    # (FF-JSON/HTML/MyFxBook + 7 RSS + 4 Reddit/AlJazeera + 10 pair price check)
-    # bisa mendekati 4 menit kalau koneksi lemot — kasih margin biar gak ke-kill
-    # di tengah jalan (state belum ke-save = dedup utk run itu hilang).
-    timeout-minutes: 6
+    # v2.4: naik dari 6→8 menit. v2.4 ada 13 modes — lebih banyak network call.
+    # Worst-case semua network call timeout (FF-JSON/HTML/MyFxBook + RSS feeds
+    # + 11 pair price check + Telegram sends) bisa mendekati 6 menit kalau
+    # koneksi lemot — kasih margin biar gak ke-kill di tengah jalan
+    # (state belum ke-save = dedup utk run itu hilang).
+    timeout-minutes: 8
 
     steps:
       - name: Checkout repo
@@ -33,6 +34,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      # Restore state cache — ambil cache terbaru via restore-keys prefix match
       # v2.1 FIX — bug kritis: key sebelumnya statis ("news-state-latest").
       # actions/cache TIDAK bisa overwrite cache dengan key yang sama persis.
       # Akibatnya: run pertama berhasil save, tapi SEMUA run berikutnya gagal
