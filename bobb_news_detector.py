@@ -227,7 +227,7 @@ SESSION_OPENS = {
     'London': {'utc_hour': 7,  'utc_minute': 0, 'wib': '14:00', 'emoji': '🇬🇧'},
     'NY':     {'utc_hour': 12, 'utc_minute': 0, 'wib': '19:00', 'emoji': '🇺🇸'},
 }
-SESSION_OPEN_WINDOW_MINUTES = 5   # alert hanya dalam 5 menit pertama setelah open
+SESSION_OPEN_WINDOW_MINUTES = 10  # v2.4: naik dari 5→10 menit, toleransi GitHub Actions delay
 
 # ── v2.3: Weekly Preview ────────────────────────────────────────────────────
 # Minggu malam 20:00 WIB = 13:00 UTC — sebelum market Asia buka
